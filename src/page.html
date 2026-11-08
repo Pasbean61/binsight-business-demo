@@ -1,0 +1,395 @@
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="BinSight home">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><path d="M6 8.5h14l-1.4 13.2a2 2 0 0 1-2 1.8H9.4a2 2 0 0 1-2-1.8z" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/><path d="M4 8.5h18M10.5 8.5V6a1.5 1.5 0 0 1 1.5-1.5h2A1.5 1.5 0 0 1 15.5 6v2.5" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M10 15.5l2.2 2.2 4-4.4" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      BinSight
+    </a>
+    <nav class="links" aria-label="Sections">
+      <a href="#how">How it works</a><a href="#product">Product</a><a href="#pricing">Pricing</a><a href="#savings">Savings</a><a href="#compare">Compare</a><a href="#faq">FAQ</a>
+    </nav>
+    <a class="btn primary sm" href="#pilot">Book a pilot</a>
+  </div>
+</header>
+
+<main id="top">
+<!-- HERO -->
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="eyebrow">Forecast-led collection for communal bins</span>
+      <h1>Empty the bins that are full. <em>Pay only from what you save.</em></h1>
+      <p class="lede">BinSight forecasts how full every communal bin will be tomorrow and plans your rounds overnight, so trucks go where the waste is. There is nothing to buy upfront: our fee is a share of the savings we verify, and we credit you for every overflow above target.</p>
+      <div class="cta">
+        <a class="btn primary" href="#savings">Estimate your savings</a>
+        <a class="btn ghost" href="#pilot">Book a free 90-day pilot</a>
+      </div>
+      <ul class="assure">
+        <li>Works with the sensors you already have</li>
+        <li>£0 upfront</li>
+        <li>Savings checked against control areas</li>
+      </ul>
+    </div>
+    <div>
+      <div class="mapcard" id="mapcard">
+        <canvas id="map" aria-label="Animated map of Edinburgh: tomorrow's collection trucks driving their planned routes and emptying the bins forecast to be full"></canvas>
+        <div class="map-top">
+          <div><div class="map-clock num" id="mClock">06:00</div><div class="map-day" id="mDay">Tuesday 3 November · Edinburgh</div></div>
+          <div class="map-legend" aria-hidden="true">
+            <span><i id="lgFull"></i>forecast to be full</span>
+            <span><i id="lgDone"></i>emptied</span>
+            <span><i id="lgSkip"></i>can wait</span>
+          </div>
+        </div>
+        <button class="map-btn" type="button" id="mPlay" aria-label="Pause the animation">Pause</button>
+        <div class="map-stats">
+          <div><b id="mBins">0</b><span>of <span data-f="served">2,127</span> bin stops emptied</span></div>
+          <div><b id="mTrucks">0</b><span>trucks on the road</span></div>
+          <div><b id="mKm">0</b><span>km driven</span></div>
+        </div>
+      </div>
+      <p class="map-caption"><span class="tag real">Real</span> bin stops, streets and routes for Edinburgh’s <span data-f="stops">4,532</span> communal bin stops. <span class="tag sim">Simulated</span> fill levels.</p>
+    </div>
+  </div>
+</section>
+
+<!-- PROOF -->
+<section class="tight" style="padding-top:8px">
+  <div class="wrap">
+    <div class="proof">
+      <div><b data-f="ovfCut">82%</b><span>fewer overflowing bins</span></div>
+      <div><b data-f="costCut">29%</b><span>lower daily cost, overflows included</span></div>
+      <div><b data-f="collCut">31%</b><span>fewer collections of half-empty bins</span></div>
+      <div><b data-f="hoursFreed">65</b><span>truck-hours freed every day, same fleet</span></div>
+    </div>
+    <p class="proof-note"><span class="tag sim">Simulated</span> Edinburgh, city-scale simulation against today’s every-second-day timetable with the same <span data-f="fleet">34</span>-truck fleet: <span data-f="simDays">7 test days × 2 runs</span>. <a href="https://pasbean61.github.io/binsight-edinburgh/#results">See the full study and method</a>.</p>
+  </div>
+</section>
+
+<!-- PROBLEM -->
+<section class="band" id="problem">
+  <div class="wrap">
+    <div class="head">
+      <div><span class="eyebrow">The problem</span><h2>Timetables empty half-empty bins and miss the full ones.</h2></div>
+      <p>Communal bins fill at different speeds every day: short lets, students moving out, festivals, a wet weekend. A fixed round can’t see any of it. Councils pay for wasted lifts and then again for overflow clean-ups and complaints.</p>
+    </div>
+    <div class="facts">
+      <div class="fact"><b>6,006</b><p>reports of full or overflowing bins in Edinburgh in one summer quarter, up 13 % on the year before.</p><span class="src"><span class="tag real">Real</span> <a href="https://www.edinburghnews.scotsman.com/news/politics/council/edinburgh-council-blames-increase-in-overflowing-bins-on-explosion-of-airbnb-style-short-term-lets-1331605" target="_blank" rel="noopener">Edinburgh Evening News, 2019</a></span></div>
+      <div class="fact"><b>£20.2m</b><p>of recurring savings the City of Edinburgh Council must find in 2026/27, rising to £94.2m by 2029/30.</p><span class="src"><span class="tag real">Real</span> <a href="https://www.edinburgh.gov.uk/downloads/file/38260/council-budget-key-facts-and-figures-2025--2026" target="_blank" rel="noopener">CEC budget key facts 2025–26</a></span></div>
+      <div class="fact"><b>11,000</b><p>sensors already sit in Edinburgh’s communal and litter bins. The data exists. The rounds don’t use it yet.</p><span class="src"><span class="tag real">Real</span> <a href="https://www.edinburgh.gov.uk/bins-recycling/smart-bin-sensors/1" target="_blank" rel="noopener">City of Edinburgh Council</a></span></div>
+      <div class="fact"><b>20 %</b><p>of a council’s packaging EPR payment can be withheld from services judged inefficient. Edinburgh’s 2026/27 payment is about £17.3m.</p><span class="src"><span class="tag real">Real</span> <a href="https://www.gov.uk/government/publications/extended-producer-responsibility-for-packaging-local-authority-payment-calculations-2026-to-2027/local-authority-payment-values-2026-to-2027-scotland" target="_blank" rel="noopener">GOV.UK</a> · <a href="https://cosla.gov.uk/__data/assets/pdf_file/0018/52074/24-06-21-Item-06-Extended-Producer-Responsibility-on-Packaging-pEPR.pdf" target="_blank" rel="noopener">COSLA</a></span></div>
+    </div>
+  </div>
+</section>
+
+<!-- HOW -->
+<section id="how">
+  <div class="wrap">
+    <div class="head">
+      <div><span class="eyebrow">How it works</span><h2>From bin reading to tomorrow’s rounds, every night.</h2></div>
+      <p>BinSight sits between the sensors and the depot. Crews keep their trucks, shifts and depot. What changes is which bins they visit and in what order.</p>
+    </div>
+    <ol class="steps">
+      <li><h3>Sense</h3><p>We read the fill sensors you already own, from any make. No sensors yet? We fit ours at no cost.</p></li>
+      <li><h3>Forecast</h3><p>Each night we forecast every bin’s fill for the next day from its own history, the weather and holidays.</p></li>
+      <li><h3>Plan</h3><p>Bins forecast to pass 80 % go first. Routes are built for your fleet, with tipping runs, shift limits and rain built in.</p></li>
+      <li><h3>Collect</h3><p>Crews follow the run sheet in the driver app. Residents report problems in theirs, and the next plan learns from it.</p></li>
+      <li><h3>Verify</h3><p>Each month we compare BinSight areas with matched areas still on the timetable. The gap is the saving we bill against.</p></li>
+    </ol>
+  </div>
+</section>
+
+<!-- PRODUCT -->
+<section class="band" id="product">
+  <div class="wrap">
+    <div class="head">
+      <div><span class="eyebrow">Product</span><h2>One plan, three screens.</h2></div>
+      <p>Supervisors see tomorrow’s plan by ward. Crews get a run sheet. Residents see when their bin is due and can report a problem in two taps. The screens below show tomorrow’s real Edinburgh plan.</p>
+    </div>
+    <div class="screens">
+      <div class="laptop">
+        <div class="screen-h"><h3>Control room</h3><p>Tomorrow’s plan at a glance, ready by 05:00.</p></div>
+        <div class="device">
+          <div class="chrome"><i></i><i></i><i></i><span>BinSight · Plan for <span id="crDay">Tue 3 Nov</span></span></div>
+          <div class="cr-kpis">
+            <div><b data-f="served">2,127</b><span>bin stops to empty</span></div>
+            <div><b data-f="trucks">34</b><span>trucks · <span data-f="trips">70</span> trips</span></div>
+            <div><b data-f="lastBack">14:00</b><span>last truck back</span></div>
+            <div><b>0</b><span>stops left to overflow</span></div>
+          </div>
+          <div class="tablewrap"><table class="cr"><thead><tr><th>Ward</th><th class="n">Bin stops</th><th>Emptied tomorrow</th><th class="n">Trucks</th></tr></thead><tbody id="crRows"></tbody></table></div>
+        </div>
+      </div>
+      <div>
+        <div class="screen-h"><h3>Driver app</h3><p>A run sheet in order, with tip runs.</p></div>
+        <div class="phone"><div class="inner">
+          <div class="ph-top"><span>06:00</span><span>Shift 06:00–14:00</span></div>
+          <div class="ph-h"><b id="drTruck">EDI-RCV-01</b><span id="drSub">Trip 1 of 2</span></div>
+          <ul class="run" id="drRun"></ul>
+          <div class="ph-foot"><span class="ph-btn">Start trip</span></div>
+        </div></div>
+      </div>
+      <div>
+        <div class="screen-h"><h3>Resident app</h3><p>“Is my bin being emptied?” answered.</p></div>
+        <div class="phone"><div class="inner">
+          <div class="ph-top"><span>18:30</span><span>BinSight</span></div>
+          <div class="ph-h"><b id="rsStreet">Calton Road</b><span id="rsSub">Your communal bins</span></div>
+          <div class="res-card">
+            <div class="res-row"><span>Now</span><b id="rsNow">–</b></div>
+            <div class="gauge"><i id="rsBar" style="width:60%"></i></div>
+            <div class="res-row"><span>Forecast by 14:00 tomorrow</span><b id="rsPred">–</b></div>
+            <div><span class="pill go" id="rsPill">Truck due tomorrow</span></div>
+          </div>
+          <div class="ph-foot"><span class="ph-btn">Report an overflowing bin</span><span class="ph-btn alt">Report a missed collection</span></div>
+        </div></div>
+      </div>
+    </div>
+    <p class="demo-note"><span class="tag real">Real</span> street names, bin stops and routes from the council register and OpenStreetMap. <span class="tag sim">Simulated</span> fill levels and times.</p>
+  </div>
+</section>
+
+<!-- RESIDENT LOOKUP -->
+<section id="residents">
+  <div class="wrap lookup">
+    <div>
+      <span class="eyebrow">For residents</span>
+      <h2>Is your street’s bin being emptied tomorrow?</h2>
+      <p>Residents get a clear answer instead of a timetable. Try it with any Edinburgh street that has communal bins. Reports from residents feed the next night’s plan, so a bin that keeps overflowing gets visited sooner.</p>
+      <div class="chips" id="chips" aria-label="Example streets"></div>
+    </div>
+    <div>
+      <label for="q" class="muted small">Street name</label>
+      <div class="search"><input id="q" type="search" autocomplete="off" placeholder="e.g. Leith Walk" value="Leith Walk"></div>
+      <ul class="results" id="results" aria-live="polite"></ul>
+      <p class="demo-note" style="margin-top:12px"><span class="tag sim">Simulated</span> forecasts for tomorrow, 3 November 2026.</p>
+    </div>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="band" id="pricing">
+  <div class="wrap">
+    <div class="head">
+      <div><span class="eyebrow">Pricing</span><h2>We earn when you save. Never before.</h2></div>
+      <p>Sensor vendors sell hardware and a licence and leave the risk with you. We take the risk: no upfront cost, a fee only from savings we can prove, and a credit for every overflow above target.</p>
+    </div>
+    <div class="plans">
+      <div class="plan">
+        <span class="who">Start here</span>
+        <h3>Free pilot</h3>
+        <div class="price">£0<small>90 days, one area of up to 300 bin stops</small></div>
+        <ul>
+          <li>4 weeks in shadow mode: our plan next to yours</li>
+          <li>9 weeks live, with matched control areas</li>
+          <li>A savings report you keep either way</li>
+          <li>Sets the overflow baseline for your guarantee</li>
+        </ul>
+        <a class="btn ghost" href="#pilot">Book a pilot</a>
+      </div>
+      <div class="plan star">
+        <span class="who">Councils</span>
+        <h3>Savings Share</h3>
+        <div class="price">25 %<small>of verified savings. £0 upfront.</small></div>
+        <ul>
+          <li>Uses your sensors, or we fit ours free</li>
+          <li><b>Overflow guarantee:</b> £60 credit for every overflow above the pilot baseline</li>
+          <li>Monthly savings statement, open to your auditors</li>
+          <li>No verified saving, no bill</li>
+          <li>5 years, then a flat licence or walk away</li>
+        </ul>
+        <a class="btn primary" href="#savings">See your share</a>
+      </div>
+      <div class="plan">
+        <span class="who">New income</span>
+        <h3>Spare Shift</h3>
+        <div class="price">15 %<small>of bookings. You keep 85 %.</small></div>
+        <ul>
+          <li>Truck time freed by BinSight becomes bookable slots</li>
+          <li>Bulky uplifts, trade waste, event clean-ups</li>
+          <li>You set the prices and the service area</li>
+          <li>Hours sold here are never also billed as savings</li>
+        </ul>
+        <a class="btn ghost" href="#spare">How Spare Shift works</a>
+      </div>
+      <div class="plan">
+        <span class="who">Estates and campuses</span>
+        <h3>BinSight Estates</h3>
+        <div class="price">£4<small>per bin a month, sensor included</small></div>
+        <ul>
+          <li>For housing associations, universities, student halls and hotels</li>
+          <li>Your contractor is called only when a bin is nearly full</li>
+          <li>Overflow alerts to your site team</li>
+          <li>First month free, cancel any month</li>
+        </ul>
+        <a class="btn ghost" href="#pilot">Talk to us</a>
+      </div>
+    </div>
+    <div class="why" id="spare">
+      <div><b>The risk sits with us</b><p>No hardware to buy and no licence to justify. If the pilot areas don’t beat their control areas, the fee is zero, and overflows above baseline cost us, not you.</p></div>
+      <div><b>Savings become income</b><p>BinSight frees truck time. Bank it as a saving, or open it to bookings through Spare Shift and earn from it. In the Edinburgh simulation that is <span data-f="hoursFreed">65</span> truck-hours a day, about <span data-f="shiftsFreed">8</span> eight-hour crew shifts.</p></div>
+      <div><b>Proof you can show</b><p>Monthly statements with matched control areas give you the efficiency evidence that budget committees and packaging-EPR assessors ask for.</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- SAVINGS CALCULATOR -->
+<section id="savings">
+  <div class="wrap">
+    <div class="head">
+      <div><span class="eyebrow">Savings estimate</span><h2>What would BinSight save you?</h2></div>
+      <p>Move the slider to your number of communal bin stops. The estimate scales the Edinburgh simulation per stop. Your pilot measures the real figure.</p>
+    </div>
+    <div class="calc">
+      <div class="calc-in">
+        <div class="field">
+          <label for="cStops">Communal bin stops <output id="oStops" class="num">4,532</output></label>
+          <input type="range" id="cStops" min="100" max="15000" step="1" value="4532">
+          <small>Edinburgh has <span data-f="stops">4,532</span> general-waste stops holding <span data-f="bins">10,657</span> bins.</small>
+        </div>
+        <div class="field">
+          <label id="lvLabel">How much of the simulated saving to count</label>
+          <div class="seg" id="cLevel" role="group" aria-labelledby="lvLabel">
+            <button type="button" data-v="1">All of it</button><button type="button" data-v="0.5" class="on">Half</button><button type="button" data-v="0.25">A quarter</button>
+          </div>
+          <small>Half is our planning case. Real rounds have constraints a simulation leaves out.</small>
+        </div>
+        <p class="small muted">Per stop, the simulation saved <b class="num" data-f="perStop">£494</b> a year at £1.45 a km, £75 a truck-hour and £60 an overflow. It also cut overflows by <span data-f="ovfCut">82%</span>.</p>
+      </div>
+      <div class="calc-out">
+        <div><span class="muted small">Estimated saving per year</span><div class="big" id="cTotal">£1.1m</div></div>
+        <div class="split">
+          <div class="bar" aria-hidden="true"><i id="cKeepBar" style="width:75%"></i><i style="width:25%"></i></div>
+          <div class="keys"><span><span class="dot" style="background:var(--accent)"></span>You keep <b id="cKeep">£840k</b></span><span><span class="dot" style="background:var(--amber)"></span>Our fee (25 %) <b id="cFee">£280k</b></span></div>
+        </div>
+        <div class="outs">
+          <div><b id="cOvf">–</b><span>overflows avoided a year</span></div>
+          <div><b id="cHours">–</b><span>truck-hours freed a year</span></div>
+          <div><b id="cCo2">–</b><span>tonnes of CO₂ avoided a year</span></div>
+        </div>
+        <p class="small muted">Plus the overflow guarantee: if overflows rise above your pilot baseline, each one is credited at £60.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- COMPARE -->
+<section class="band" id="compare">
+  <div class="wrap">
+    <div class="head">
+      <div><span class="eyebrow">Compare</span><h2>Why councils choose BinSight over the alternatives.</h2></div>
+      <p>Sensors alone don’t save money. Manchester’s 2017 sensor trial worked technically but wasn’t financially viable without route optimisation. BinSight is the missing step, with a contract that pays for itself.</p>
+    </div>
+    <div class="tablewrap">
+      <table class="vs">
+        <thead><tr><th scope="col"></th><th scope="col">Fixed timetable</th><th scope="col">Sensors + licence</th><th scope="col">Route-planning software</th><th scope="col" class="us">BinSight</th></tr></thead>
+        <tbody>
+          <tr><th scope="row">Upfront cost</th><td>None</td><td>Hardware purchase</td><td>Licence and set-up</td><td class="us">£0</td></tr>
+          <tr><th scope="row">Who carries the risk</th><td>You</td><td>You</td><td>You</td><td class="us">Us: no saving, no fee</td></tr>
+          <tr><th scope="row">Uses sensors you already own</th><td class="no">n/a</td><td class="no">Usually its own devices</td><td class="no">Rarely</td><td class="us yes">Any make</td></tr>
+          <tr><th scope="row">Forecasts each bin for tomorrow</th><td class="no">No</td><td>Fill alerts</td><td class="no">No</td><td class="us yes">Every bin, every night</td></tr>
+          <tr><th scope="row">Plans the routes</th><td>Fixed rounds</td><td class="no">Often not</td><td class="yes">Yes</td><td class="us yes">Daily, fullest first</td></tr>
+          <tr><th scope="row">Overflow guarantee</th><td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="us yes">£60 credit each</td></tr>
+          <tr><th scope="row">Turns freed truck time into income</th><td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="us yes">Spare Shift</td></tr>
+          <tr><th scope="row">Savings checked against control areas</th><td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="us yes">Monthly</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="demo-note">Categories describe typical offers, not named companies. Manchester: <a href="https://www.europeancleaningjournal.com/magazine/articles/latest-news/manchester-to-use-smart-bins-to-tackle-issue-of-dirty-streets" target="_blank" rel="noopener">European Cleaning Journal</a>.</p>
+  </div>
+</section>
+
+<!-- TRUST -->
+<section id="trust">
+  <div class="wrap">
+    <div class="head">
+      <div><span class="eyebrow">How we prove it</span><h2>Every pound on your statement is measured, not modelled.</h2></div>
+      <p>The simulation tells you what to expect. The pilot and the monthly statement tell you what happened.</p>
+    </div>
+    <div class="trust">
+      <div><h3>Matched control areas</h3><p>Some areas stay on the timetable. We compare cost per lift, truck-hours and overflows between BinSight areas and their matched controls, so weather, festivals and term dates cancel out.</p></div>
+      <div><h3>An open method</h3><p>The forecast, the decision rule and the routing model are published in full, with code, so your analysts and auditors can check them. <a href="https://pasbean61.github.io/binsight-edinburgh/#maths" target="_blank" rel="noopener">Read the method</a>.</p></div>
+      <div><h3>Bin data, not people</h3><p>We store fill readings, locations and collection times. No cameras and no household data. Resident reports carry a street, not a name.</p></div>
+    </div>
+    <ol class="timeline">
+      <li><span class="when">Weeks 1–2</span><b>Connect</b><p>We link your sensor feed, bin register and depot details. Your team changes nothing yet.</p></li>
+      <li><span class="when">Weeks 3–6</span><b>Shadow</b><p>BinSight plans every night next to your timetable, so supervisors can compare before anything changes.</p></li>
+      <li><span class="when">Weeks 7–13</span><b>Live</b><p>Crews in the pilot area follow the BinSight plan. Control areas stay on the timetable.</p></li>
+      <li><span class="when">Day 90</span><b>Decide</b><p>You get the measured savings and overflow baseline. Sign Savings Share, or keep the report and walk away.</p></li>
+    </ol>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section class="band" id="faq">
+  <div class="wrap">
+    <div class="head">
+      <div><span class="eyebrow">Questions</span><h2>What councils ask us first.</h2></div>
+      <p>Something else on your mind? Book a pilot call and bring your collection data. We’ll show you the plan your rounds would get.</p>
+    </div>
+    <div class="faq">
+      <details open><summary>Do we need new sensors?</summary><p>No, if you already have fill sensors: BinSight reads any make. Edinburgh, for example, already has about 11,000 bin sensors. Where there are none, we fit ours at no cost under Savings Share and maintain them.</p></details>
+      <details><summary>How exactly is the saving calculated?</summary><p>Before go-live, we agree the cost per kilometre, per truck-hour and per overflow with your finance team. Each month we compare BinSight areas with matched control areas still on the timetable. The saving is the difference in cost per bin stop, multiplied by the stops on BinSight. Your auditors can see every number.</p></details>
+      <details><summary>What if the savings don’t appear?</summary><p>Then you pay nothing. If overflows rise above the baseline set in your pilot, we credit £60 for each one, whatever the savings.</p></details>
+      <details><summary>Will crews lose shifts?</summary><p>That is your choice. Freed hours can cut overtime and agency cover, absorb peaks like the festivals or student move-out, or be sold as Spare Shift services so the same crews earn new income for the council.</p></details>
+      <details><summary>How fast can we start?</summary><p>A pilot takes 90 days: two weeks to connect data, four weeks in shadow mode and nine weeks live. A citywide rollout usually follows ward by ward.</p></details>
+      <details><summary>Are the results on this page real?</summary><p>The bin stops, streets, wards, weather and routes are real Edinburgh data. Fill levels come from a city-scale simulation because live sensor readings are not public; every simulated figure is labelled. The pilot replaces simulation with your own measured results.</p></details>
+    </div>
+  </div>
+</section>
+
+<!-- PILOT -->
+<section id="pilot">
+  <div class="wrap pilot">
+    <div>
+      <span class="eyebrow">Free 90-day pilot</span>
+      <h2>See tomorrow’s plan for your own bins.</h2>
+      <p class="lede">Tell us about your service. We’ll come back with a pilot area, a shadow-mode start date and the cost assumptions for your savings statement.</p>
+      <ul class="assure" style="margin-top:8px">
+        <li>No procurement needed for a free pilot</li>
+        <li>No change for crews until week 7</li>
+        <li>You keep the report</li>
+      </ul>
+    </div>
+    <div id="pilotBox">
+      <form class="card" id="pilotForm" novalidate>
+        <div class="row2">
+          <label for="fName">Your name<input id="fName" name="name" autocomplete="name" required></label>
+          <label for="fOrg">Organisation<input id="fOrg" name="org" autocomplete="organization" required></label>
+        </div>
+        <div class="row2">
+          <label for="fType">You are a
+            <select id="fType" name="type"><option>Council</option><option>Housing association</option><option>University or student housing</option><option>Waste contractor</option><option>Business or landlord</option><option>Other</option></select>
+          </label>
+          <label for="fBins">Communal bins (approx.)<input id="fBins" name="bins" inputmode="numeric" placeholder="e.g. 2,000"></label>
+        </div>
+        <label for="fEmail">Work email<input id="fEmail" name="email" type="email" autocomplete="email" required></label>
+        <p class="err" id="fErr" role="alert"></p>
+        <button class="btn primary" type="submit">Request a pilot</button>
+        <p class="small muted">This is a demo site: requests are not sent anywhere yet.</p>
+      </form>
+    </div>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap cols">
+    <div>
+      <h4>BinSight</h4>
+      <p>A business demo by EMS Group 6, University of Edinburgh, built on the BinSight research project. Bin stops, streets, wards, weather and routes are real Edinburgh data. Fill levels and the results marked Simulated come from a city-scale simulation. Prices are our proposal.</p>
+      <p style="margin-top:10px"><a href="https://pasbean61.github.io/binsight-edinburgh/" target="_blank" rel="noopener">Research site and method</a> · <a href="https://github.com/Pasbean61/binsight-business-demo" target="_blank" rel="noopener">Source code</a></p>
+    </div>
+    <div>
+      <h4>Sources</h4>
+      <ol>
+        <li><a href="https://data.edinburghcouncilmaps.info/datasets/283caa7cb2434db3874526d16efe8c67_27/about" target="_blank" rel="noopener">City of Edinburgh Council, Communal Bins register (OGL v3.0)</a></li>
+        <li><a href="https://www.edinburgh.gov.uk/bins-recycling/smart-bin-sensors/1" target="_blank" rel="noopener">City of Edinburgh Council, Smart bin sensors</a></li>
+        <li><a href="https://www.edinburgh.gov.uk/downloads/file/38260/council-budget-key-facts-and-figures-2025--2026" target="_blank" rel="noopener">City of Edinburgh Council, Budget key facts 2025–26</a></li>
+        <li><a href="https://www.edinburghnews.scotsman.com/news/politics/council/edinburgh-council-blames-increase-in-overflowing-bins-on-explosion-of-airbnb-style-short-term-lets-1331605" target="_blank" rel="noopener">Edinburgh Evening News (2019), overflowing bins</a></li>
+        <li><a href="https://www.gov.uk/government/publications/extended-producer-responsibility-for-packaging-local-authority-payment-calculations-2026-to-2027/local-authority-payment-values-2026-to-2027-scotland" target="_blank" rel="noopener">GOV.UK (2026), pEPR payment values: Scotland</a></li>
+        <li><a href="https://cosla.gov.uk/__data/assets/pdf_file/0018/52074/24-06-21-Item-06-Extended-Producer-Responsibility-on-Packaging-pEPR.pdf" target="_blank" rel="noopener">COSLA (2024), Extended Producer Responsibility on Packaging</a></li>
+        <li><a href="https://www.europeancleaningjournal.com/magazine/articles/latest-news/manchester-to-use-smart-bins-to-tackle-issue-of-dirty-streets" target="_blank" rel="noopener">European Cleaning Journal, Manchester smart bins</a></li>
+        <li>Streets © OpenStreetMap contributors (ODbL) · Wards: ONS (OGL) · Weather: Open-Meteo (CC BY 4.0)</li>
+      </ol>
+    </div>
+  </div>
+</footer>
