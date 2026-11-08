@@ -125,7 +125,7 @@
   const servedIdx = [];
   for (let i = 0; i < nStops; i++) if (S.truck[i] >= 0) servedIdx.push(i);
   servedIdx.sort((a, b) => S.eta[a] - S.eta[b]);
-  const T_END = F.plan.last_back_min + 6;
+  const T_END = Math.ceil(F.plan.last_back_min / 60) * 60;
 
   /* ---------- hero map ----------
      The street map is OpenStreetMap (OpenFreeMap vector tiles drawn by MapLibre), so streets, buildings and
@@ -137,7 +137,7 @@
   const lctx = lblCv.getContext("2d");
   let W = 0, H = 0, dpr = 1, C = {}, gl = null;
   const view = { x: .5, y: .5, z: 11 };                   // centre in world units, zoom (512-px tiles, as MapLibre)
-  const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const css = n => getComputedStyle(card).getPropertyValue(n).trim();
   const dark = () => { const t = document.documentElement.dataset.theme; return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; };
   function readColours() {
     C = {}; ["bg", "land", "edge", "road", "road-2", "park", "water", "full", "done", "wait", "truck", "truck-ring", "ink", "label", "building"]
@@ -182,6 +182,7 @@
     c.beginPath(); base.wards.forEach(rings => rings.forEach(r => path(c, r, true))); c.strokeStyle = C.edge; c.lineWidth = 1; c.stroke();
     c.setLineDash([]);
     drawLabels();
+    base0 = { SC, OX, OY };
   }
   // names on the fallback map: places from the city zoom, street names as you zoom in, never overlapping
   const widths = new Map();
@@ -217,44 +218,137 @@
   }
 
   function layout() {
-    const r = card.getBoundingClientRect();
     dpr = Math.min(2, window.devicePixelRatio || 1);
-    W = Math.max(1, r.width); H = Math.max(1, r.height);
+    W = Math.max(1, card.clientWidth); H = Math.max(1, card.clientHeight);
     for (const c of [cv, baseCv, lblCv]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
     if (!gl && !moved) fitView();
+    if (gl) gl.resize();
     syncView(); drawBase();
   }
 
-  // the fallback map pans and zooms like the street map: drag, double-click, the +/− buttons, ctrl/⌘ + wheel
-  let moved = false;
+  /* the fallback map handles the mouse like any web map: scroll to zoom, drag to pan (with a little glide),
+     double-click to zoom in; on phones two fingers pan and pinch, one finger scrolls the page.
+     While it moves, the street layer is moved as a bitmap and redrawn sharp once it settles. */
+  let moved = false, base0 = null, settleT = 0, vraf = 0, drag = null;
+  const target = { z: null, ax: 0, ay: 0 }, vel = [0, 0], touches = new Map();
+  const coarse = matchMedia("(pointer: coarse)").matches;
+  function applyView() {
+    syncView();
+    if (base0) {
+      const k = SC / base0.SC, t = `translate(${OX - base0.OX * k}px, ${OY - base0.OY * k}px) scale(${k})`;
+      baseCv.style.transform = t; lblCv.style.transform = t;
+    }
+    clearTimeout(settleT); settleT = setTimeout(sharpen, 160);
+    if (!playing || !visible) frame(T);
+  }
+  function sharpen() { baseCv.style.transform = lblCv.style.transform = ""; syncView(); drawBase(); }
+  function setZoom(z, sx, sy) {
+    const k = 2 ** (z - view.z), wxp = (sx - OX) / SC, wyp = (sy - OY) / SC;
+    view.x = wxp - (wxp - view.x) / k; view.y = wyp - (wyp - view.y) / k; view.z = z; syncView();
+  }
+  function viewLoop() {
+    vraf = 0; let busy = false;
+    if (target.z != null) {
+      const dz = target.z - view.z;
+      if (Math.abs(dz) < .003) { setZoom(target.z, target.ax, target.ay); target.z = null; }
+      else { setZoom(view.z + dz * .22, target.ax, target.ay); busy = true; }
+    }
+    if (!drag && Math.hypot(vel[0], vel[1]) > .08) { view.x -= vel[0] / SC; view.y -= vel[1] / SC; vel[0] *= .9; vel[1] *= .9; busy = true; }
+    moved = true; applyView();
+    if (busy) vraf = requestAnimationFrame(viewLoop);
+  }
+  const kick = () => { if (!vraf) vraf = requestAnimationFrame(viewLoop); };
+  const ZMIN = 9.5, ZMAX = 17.5;
   function zoomAt(dz, sx = W / 2, sy = H / 2) {
-    if (gl) { gl.easeTo({ zoom: gl.getZoom() + dz, around: gl.unproject([sx, sy]), duration: 300 }); return; }
-    const z = Math.min(17, Math.max(9.5, view.z + dz)), k = 2 ** (z - view.z);
-    const wxp = (sx - OX) / SC, wyp = (sy - OY) / SC;
-    view.x = wxp - (wxp - view.x) / k; view.y = wyp - (wyp - view.y) / k; view.z = z;
-    moved = true; redraw();
+    if (gl) { gl.easeTo({ zoom: gl.getZoom() + dz, around: gl.unproject([sx, sy]), duration: 380 }); return; }
+    target.z = Math.min(ZMAX, Math.max(ZMIN, (target.z ?? view.z) + dz)); target.ax = sx; target.ay = sy; kick();
   }
   function redraw() { syncView(); drawBase(); frame(T); }
   {
-    let drag = null;
-    cv.addEventListener("pointerdown", e => { if (gl || e.button) return; drag = [e.clientX, e.clientY, view.x, view.y]; cv.setPointerCapture(e.pointerId); card.classList.add("grabbing"); });
-    cv.addEventListener("pointermove", e => {
-      if (!drag) return;
-      view.x = drag[2] - (e.clientX - drag[0]) / SC; view.y = drag[3] - (e.clientY - drag[1]) / SC; moved = true; redraw();
+    const local = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+    let pinch = null;
+    cv.addEventListener("pointerdown", e => {
+      if (gl || e.button) return;
+      hideTip();
+      if (e.pointerType === "touch") {
+        touches.set(e.pointerId, local(e));
+        if (touches.size === 2) { const [a, b] = [...touches.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), m: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], z: view.z }; cv.setPointerCapture(e.pointerId); }
+        return;
+      }
+      drag = { p: local(e), t: performance.now() }; vel[0] = vel[1] = 0; target.z = null;
+      cv.setPointerCapture(e.pointerId); card.classList.add("grabbing");
     });
-    const up = () => { drag = null; card.classList.remove("grabbing"); };
+    cv.addEventListener("pointermove", e => {
+      if (gl) return;
+      const p = local(e);
+      if (e.pointerType === "touch") {
+        if (!touches.has(e.pointerId)) return;
+        touches.set(e.pointerId, p);
+        if (touches.size === 2 && pinch) {
+          const [a, b] = [...touches.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]), m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+          view.x -= (m[0] - pinch.m[0]) / SC; view.y -= (m[1] - pinch.m[1]) / SC; syncView();
+          setZoom(Math.min(ZMAX, Math.max(ZMIN, pinch.z + Math.log2(d / pinch.d))), m[0], m[1]);
+          pinch.m = m; moved = true; applyView();
+        }
+        return;
+      }
+      if (!drag) { hover(p); return; }
+      const dx = p[0] - drag.p[0], dy = p[1] - drag.p[1];
+      view.x -= dx / SC; view.y -= dy / SC; vel[0] = dx; vel[1] = dy; drag.p = p; drag.t = performance.now();
+      moved = true; applyView();
+    });
+    const up = e => {
+      touches.delete(e.pointerId); if (touches.size < 2) pinch = null;
+      if (!drag) return;
+      if (performance.now() - drag.t > 80) vel[0] = vel[1] = 0;      // let go after stopping: no glide
+      drag = null; card.classList.remove("grabbing"); kick();
+    };
     cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
-    cv.addEventListener("dblclick", e => { if (gl) return; const r = cv.getBoundingClientRect(); zoomAt(1, e.clientX - r.left, e.clientY - r.top); });
+    cv.addEventListener("click", e => { if (!gl) hover(local(e)); });
+    cv.addEventListener("pointerleave", () => { if (!drag) hideTip(); });
+    cv.addEventListener("dblclick", e => { if (gl) return; const p = local(e); zoomAt(1, p[0], p[1]); });
     cv.addEventListener("wheel", e => {
-      if (gl || !(e.ctrlKey || e.metaKey)) return;
-      e.preventDefault(); const r = cv.getBoundingClientRect(); zoomAt(-e.deltaY * .004, e.clientX - r.left, e.clientY - r.top);
+      if (gl) return;
+      e.preventDefault(); hideTip();
+      const p = local(e), d = e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+      zoomAt(-d * (e.ctrlKey ? .012 : .0028), p[0], p[1]);           // ctrl + wheel is a trackpad pinch
     }, { passive: false });
+    if (coarse) card.classList.add("coarse");
     $("#mZoomIn").addEventListener("click", () => zoomAt(1));
     $("#mZoomOut").addEventListener("click", () => zoomAt(-1));
     $("#mReset").addEventListener("click", () => {
-      if (gl) { gl.fitBounds([[box.w, box.s], [box.e, box.n]], { padding: pad(), duration: 600 }); return; }
-      moved = false; fitView(); redraw();
+      if (gl) { gl.fitBounds([[box.w, box.s], [box.e, box.n]], { padding: pad(), duration: 700 }); return; }
+      moved = false; target.z = null; fitView(); redraw();
     });
+  }
+
+  /* hover (or tap) a bin stop to see what tomorrow's plan does with it */
+  const tip = document.createElement("div"); tip.className = "map-tip"; tip.hidden = true; card.appendChild(tip);
+  const truckName = k => (D.trucks[k] || {}).id || "";
+  function showTip(i, x, y) {
+    const pred = S.pred[i], served = S.truck[i] >= 0;
+    const rows = [
+      ["b", N[S.site[i]]],
+      ["span", `${S.nb[i]} bin${S.nb[i] > 1 ? "s" : ""} · ${(F.wards_plan[S.ward[i]] || {}).name || ""}`],
+      ["span", `Forecast by 14:00: ${pred >= 100 ? "full" : pred + "%"}`],
+      ["em", served ? (S.eta[i] <= T ? `Emptied at ${clock(S.eta[i])} by ${truckName(S.truck[i])}` : `Due at ${clock(S.eta[i])} · ${truckName(S.truck[i])}`)
+        : pred >= 80 ? "First on the next round" : "Not needed tomorrow"],
+    ];
+    tip.replaceChildren(...rows.map(([t, txt]) => { const el = document.createElement(t); el.textContent = txt; return el; }));
+    tip.className = "map-tip " + (served ? (S.eta[i] <= T ? "done" : "due") : pred >= 80 ? "due" : "wait");
+    tip.hidden = false;
+    const w = tip.offsetWidth, h = tip.offsetHeight, left = Math.max(8, Math.min(W - w - 8, x + 14 + w > W - 8 ? x - w - 14 : x + 14));
+    tip.style.transform = `translate(${Math.round(left)}px, ${Math.round(Math.max(8, Math.min(H - h - 8, y - h / 2)))}px)`;
+  }
+  function hideTip() { tip.hidden = true; }
+  function hover([x, y]) {
+    let best = -1, bd = 100;                                 // within 10 px
+    for (let i = 0; i < nStops; i++) {
+      const dx = stopX[i] * SC + OX - x, dy = stopY[i] * SC + OY - y, d = dx * dx + dy * dy;
+      if (d < bd) { bd = d; best = i; }
+    }
+    if (!showBins || best < 0) { hideTip(); cv.style.cursor = ""; return; }
+    cv.style.cursor = "pointer"; showTip(best, x, y);
   }
 
   // on the street map, bin stops are a map layer under the street and place names, so the names stay readable
@@ -262,15 +356,16 @@
   function addStops(m) {
     if (m.getSource("bs-stops")) return;
     const features = [];
-    for (let i = 0; i < nStops; i++) features.push({ type: "Feature", id: i, geometry: { type: "Point", coordinates: [S.lon[i], S.lat[i]] }, properties: { c: S.truck[i] >= 0 || S.pred[i] >= 80 ? 1 : 0 } });
+    for (let i = 0; i < nStops; i++) features.push({ type: "Feature", id: i, geometry: { type: "Point", coordinates: [S.lon[i], S.lat[i]] }, properties: { c: S.truck[i] >= 0 || S.pred[i] >= 80 ? 1 : 0, pred: S.pred[i] } });
     m.addSource("bs-stops", { type: "geojson", data: { type: "FeatureCollection", features } });
     const before = (m.getStyle().layers.find(l => l.type === "symbol") || {}).id;
     const big = ["==", ["get", "c"], 1];
     m.addLayer({ id: "bs-stops", type: "circle", source: "bs-stops", layout: { "circle-sort-key": ["get", "c"] }, paint: {
-      "circle-color": ["case", ["boolean", ["feature-state", "done"], false], C.done, big, C.full, C.wait],
+      "circle-color": ["case", ["boolean", ["feature-state", "done"], false], C.done, ["step", ["get", "pred"], "#c7d8d0", 35, "#8fbda8", 60, "#e6bd56", 80, "#e28740", 90, "#c84630"]],
       "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, ["case", big, 1.9, 1.4], 12, ["case", big, 3, 2.2], 14, 4.6, 16, 7, 18, 9.5],
       "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 12.5, 0, 13.5, 1.4],
       "circle-stroke-color": C.bg } }, before);
+    m.setLayoutProperty("bs-stops", "visibility", showBins ? "visible" : "none");
     doneNow.fill(0); syncStops(T);
   }
   function syncStops(t) {
@@ -281,8 +376,10 @@
     }
   }
 
-  let T = 0, playing = !reduce.matches, visible = true, last = 0, raf = 0, hold = 0;
-  const SPEED = T_END / 32;                                // a full shift in about half a minute
+  let showBins = true, showRoutes = true, followTruck = -1, speed = 1;
+  const routeColours = ["#2e80ba", "#bd5832", "#8060a9", "#268c78", "#bb8b1c", "#b94485", "#528835", "#405fb4"];
+  let T = 35, playing = !reduce.matches, visible = true, last = 0, raf = 0, hold = 0;
+  const SPEED = T_END / 180;                                // three minutes per shift at 1×; faster modes stay proportional
   function frame(t) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, cv.width, cv.height);
@@ -296,19 +393,28 @@
       groups[g].push(i);
     }
     if (gl) syncStops(t);
-    else [[C.wait, r * .85], [C.full, r * 1.1], [C.done, r]].forEach(([col, rad], g) => {
-      ctx.beginPath();
-      for (const i of groups[g]) {
-        const x = stopX[i] * SC + OX, y = stopY[i] * SC + OY;
-        if (x < -m || y < -m || x > W + m || y > H + m) continue;
-        ctx.moveTo(x + rad, y); ctx.arc(x, y, rad, 0, 6.2832);
+    else if (showBins) {
+      const fills = ["#c7d8d0", "#8fbda8", "#e6bd56", "#e28740", "#c84630", C.done];
+      const dots = fills.map(() => []);
+      for (let i = 0; i < nStops; i++) {
+        const done = S.truck[i] >= 0 && S.eta[i] <= t;
+        const v = S.pred[i], k = done ? 5 : v >= 90 ? 4 : v >= 80 ? 3 : v >= 60 ? 2 : v >= 35 ? 1 : 0;
+        dots[k].push(i);
       }
-      ctx.fillStyle = col; ctx.fill();
-      if (ring) { ctx.strokeStyle = C.bg; ctx.lineWidth = 1.2; ctx.stroke(); }
-    });
+      dots.forEach((ii, k) => {
+        ctx.beginPath();
+        for (const i of ii) {
+          const [x,y] = P(stopX[i],stopY[i]);
+          if (x < -m || y < -m || x > W+m || y > H+m) continue;
+          ctx.moveTo(x+r,y); ctx.arc(x,y,r,0,Math.PI*2);
+        }
+        ctx.fillStyle = fills[k]; ctx.fill();
+        if (ring) { ctx.strokeStyle = C.bg; ctx.lineWidth = 1.2; ctx.stroke(); }
+      });
+    }
     // a ring where a bin was just emptied
     ctx.strokeStyle = C.done; ctx.lineWidth = 1.2;
-    for (const i of servedIdx) {
+    for (const i of showBins ? servedIdx : []) {
       const age = t - S.eta[i];
       if (age < 0) break;
       if (age > 7) continue;
@@ -320,18 +426,21 @@
     let km = 0, active = 0;
     const heads = [];
     ctx.lineJoin = ctx.lineCap = "round";
-    ctx.strokeStyle = C.done; ctx.lineWidth = Math.max(1.1, r * .7); ctx.globalAlpha = dark() ? .3 : .38;
-    ctx.beginPath();
+    ctx.strokeStyle = C.done; ctx.lineWidth = Math.max(1.1, r * .7); ctx.globalAlpha = .65;
     for (const tr of trips) {
+      ctx.beginPath();
+      ctx.strokeStyle = routeColours[tr.truck % routeColours.length];
+      ctx.globalAlpha = followTruck < 0 || followTruck === tr.truck ? .7 : .15;
       if (t <= tr.start) continue;
       const d = tripDist(tr, t);
       km += tr.km * (tr.total ? d / tr.total : 1);
       const [hx, hy, k] = pointAt(tr, d);
       for (let q = 0; q <= k; q++) { const x = tr.pts[q][0] * SC + OX, y = tr.pts[q][1] * SC + OY; q ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
       const [x, y] = P(hx, hy); ctx.lineTo(x, y);
-      if (t < tr.end) { active++; heads.push([x, y]); }
+      if (showRoutes) ctx.stroke();
+      if (t < tr.end) { active++; heads.push([x, y, tr.truck]); }
     }
-    ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.globalAlpha = 1;
     // depot
     const [dx, dy] = P(depot[0], depot[1]), ds = Math.max(4.5, r + 2);
     ctx.fillStyle = C.ink; ctx.strokeStyle = C.bg; ctx.lineWidth = 2;
@@ -342,34 +451,95 @@
       ctx.fillStyle = C.ink; ctx.fillText("Seafield depot", dx + ds + 6, dy + 4);
     }
     const tr = Math.max(3, r * .9 + 2);
-    for (const [x, y] of heads) {
+    for (const [x, y, ti] of heads) {
       ctx.beginPath(); ctx.arc(x, y, tr + 3.5, 0, 6.2832); ctx.fillStyle = C["truck-ring"]; ctx.fill();
-      ctx.beginPath(); ctx.arc(x, y, tr, 0, 6.2832); ctx.fillStyle = C.truck; ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, tr, 0, 6.2832); ctx.fillStyle = routeColours[ti % routeColours.length]; ctx.fill();
       ctx.lineWidth = 1.5; ctx.strokeStyle = C.bg; ctx.stroke();
     }
     $("#mClock").textContent = clock(Math.min(t, T_END));
+    if (!scrubbing) timeIn.value = Math.round(t);
+    timeIn.setAttribute("aria-valuetext", clock(t) + " simulated time");
+    timeIn.style.setProperty("--p", (Math.min(t, T_END) / T_END * 100).toFixed(2) + "%");
     $("#mBins").textContent = int(groups[2].length);
     $("#mTrucks").textContent = active;
     $("#mKm").textContent = int(km);
   }
+  const timeIn = $("#mTime"); let scrubbing = false;
+  timeIn.max = T_END;
+  timeIn.setAttribute("aria-label", `Time of day in the replay, ${clock(0)} to ${clock(T_END)}`);
+  $(".map-scale span:last-child").textContent = clock(T_END);
   function tick(now) {
     raf = 0;
     if (!playing || !visible) return;
-    const dt = last ? Math.min(.1, (now - last) / 1000) : 0; last = now;
-    if (T >= T_END) { hold += dt; if (hold > 2.6) { T = 0; hold = 0; } }
-    else T = Math.min(T_END, T + dt * SPEED);
-    syncView(); frame(T);
+    const dt = last ? Math.min(.05, (now - last) / 1000) : 0; last = now;
+    if (!scrubbing) {
+      if (T >= T_END) { hold += dt; if (hold > 2.4) { T = 0; hold = 0; } }
+      else T = Math.min(T_END, T + dt * SPEED * speed);
+    }
+    followPosition();
+    // with the street map, draw in the map's own frame so trucks and streets move together
+    if (gl) gl.triggerRepaint(); else { syncView(); frame(T); }
     raf = requestAnimationFrame(tick);
   }
+  const ICON = { pause: '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="3" y="2" width="3" height="10" rx="1" fill="currentColor"/><rect x="8" y="2" width="3" height="10" rx="1" fill="currentColor"/></svg>',
+                 play: '<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M4 2.2v9.6a.6.6 0 0 0 .9.5l7.6-4.8a.6.6 0 0 0 0-1L4.9 1.7a.6.6 0 0 0-.9.5z" fill="currentColor"/></svg>' };
   function play(on) {
     playing = on;
     const b = $("#mPlay");
-    b.textContent = on ? "Pause" : "Play";
+    b.innerHTML = on ? ICON.pause : ICON.play;
     b.setAttribute("aria-label", on ? "Pause the replay" : "Play the replay");
     last = 0;
     if (on && !raf) raf = requestAnimationFrame(tick);
   }
   $("#mPlay").addEventListener("click", () => { if (!playing && T >= T_END) T = 0; play(!playing); });
+  const scrub = () => { T = +timeIn.value; hold = 0; followPosition(); if (gl) gl.triggerRepaint(); else frame(T); };
+  timeIn.addEventListener("input", scrub);
+  timeIn.addEventListener("pointerdown", () => { scrubbing = true; });
+  ["pointerup", "pointercancel", "change"].forEach(ev => timeIn.addEventListener(ev, () => { scrubbing = false; last = 0; }));
+  // Search only the project's real OSM labels and council bin register; no invented coordinates.
+  const locations = new Map();
+  labelOrder.forEach(l => { if (!locations.has(l.n.toLowerCase())) locations.set(l.n.toLowerCase(), {name: l.n, x: l.x, y: l.y}); });
+  for (let i = 0; i < nStops; i++) {
+    const name = N[S.site[i]], key = name.toLowerCase();
+    if (!locations.has(key)) locations.set(key, {name, x: stopX[i], y: stopY[i]});
+  }
+  const options = $("#mPlaces");
+  [...locations.values()].sort((a,b) => a.name.localeCompare(b.name)).forEach(l => {
+    const o = document.createElement("option"); o.value = l.name; options.appendChild(o);
+  });
+  const fromWorld = (x,y) => [(x * 360 - 180), Math.atan(Math.sinh(Math.PI * (1 - 2 * y))) / R2D];
+  const stopFollowing = () => { followTruck = -1; $("#mFollow").value = "-1"; };
+  $("#mLocate").addEventListener("submit", e => {
+    e.preventDefault();
+    const key = $("#mSearch").value.trim().toLowerCase(), loc = locations.get(key);
+    if (!loc) { $("#mSearchStatus").textContent = "Choose a street or place from the suggestions."; return; }
+    stopFollowing(); hideTip();
+    if (gl) gl.flyTo({center: fromWorld(loc.x, loc.y), zoom: 16, duration: reduce.matches ? 0 : 900});
+    else { view.x = loc.x; view.y = loc.y; view.z = 16; moved = true; target.z = null; redraw(); }
+    $("#mSearchStatus").textContent = loc.name;
+  });
+  D.trucks.forEach((t, i) => { const o = document.createElement("option"); o.value = i; o.textContent = t.id; $("#mFollow").appendChild(o); });
+  function followPosition() {
+    if (followTruck < 0) return;
+    const runs = trips.filter(tr => tr.truck === followTruck);
+    const tr = runs.find(tr => T >= tr.start && T <= tr.end);
+    const [x,y] = tr ? pointAt(tr, tripDist(tr, T)) : depot;
+    if (gl) gl.jumpTo({center: fromWorld(x,y)});
+    else { view.x = x; view.y = y; moved = true; syncView(); drawBase(); }
+  }
+  $("#mFollow").addEventListener("change", e => { followTruck = +e.target.value; if (followTruck >= 0) { if (gl) gl.setZoom(14.5); else view.z = 14.5; followPosition(); } frame(T); });
+  $("#mSpeed").addEventListener("change", e => { speed = +e.target.value; });
+  $("#mShowBins").addEventListener("change", e => { showBins = e.target.checked; hideTip(); if (gl?.getLayer("bs-stops")) gl.setLayoutProperty("bs-stops", "visibility", showBins ? "visible" : "none"); frame(T); });
+  $("#mShowRoutes").addEventListener("change", e => { showRoutes = e.target.checked; frame(T); });
+  $("#mReset").addEventListener("click", stopFollowing);
+  cv.addEventListener("pointerdown", stopFollowing);
+  const figure = card.closest("figure");
+  $("#mExpand").addEventListener("click", async () => {
+    try { if (document.fullscreenElement) await document.exitFullscreen(); else await figure.requestFullscreen(); }
+    catch { figure.classList.toggle("map-expanded"); $("#mExpand").textContent = figure.classList.contains("map-expanded") ? "Exit full screen" : "Full screen"; layout(); }
+  });
+  document.addEventListener("fullscreenchange", () => { $("#mExpand").textContent = document.fullscreenElement ? "Exit full screen" : "Full screen"; layout(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && figure.classList.contains("map-expanded")) { figure.classList.remove("map-expanded"); $("#mExpand").textContent = "Full screen"; layout(); } });
   readColours(); layout();
   window.BinSight = { show: t => { T = t; syncView(); frame(t); }, play, view: () => ({ ...view, street: !!gl }), map: () => gl };   // handy for screenshots and testing
   if (reduce.matches) T = 300;                    // a still frame at 11:00 for reduced motion
@@ -380,7 +550,7 @@
   new IntersectionObserver(es => { visible = es[0].isIntersecting && !document.hidden; wake(); }).observe(card);
   document.addEventListener("visibilitychange", () => { visible = !document.hidden; wake(); });
 
-  /* the street map: OpenStreetMap vector tiles, recoloured to the page's light or dark palette */
+  /* OpenStreetMap street tiles with the platinum palette adapted from binsight-edinburgh (MIT). */
   const OFM_STYLE = "https://tiles.openfreemap.org/styles/positron";
   const ML_JS = "https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.24.0/maplibre-gl.js";
   const ML_CSS = "https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css";
@@ -388,46 +558,50 @@
   let rawStyle = null;
   function paletteStyle() {
     const s = JSON.parse(JSON.stringify(rawStyle));
-    const paint = (l, k, v) => { (l.paint ||= {})[k] = v; };
-    for (const l of s.layers) {
-      const id = l.id;
-      if (l.type === "background") paint(l, "background-color", C.land);
-      else if (l.type === "fill") {
-        if (/water/.test(id)) paint(l, "fill-color", C.water);
-        else if (/park|wood|grass|landcover|cemetery|pitch/.test(id)) paint(l, "fill-color", C.park);
-        else if (/building/.test(id)) { paint(l, "fill-color", C.building); paint(l, "fill-outline-color", C.edge); }
-        else paint(l, "fill-color", C.land);
-        if (/residential|landuse/.test(id) && !/park|wood|grass/.test(id)) paint(l, "fill-opacity", .5);
-      } else if (l.type === "line") {
-        if (/water/.test(id)) paint(l, "line-color", C.water);
-        else if (/casing/.test(id)) paint(l, "line-color", C.edge);
-        else if (/rail/.test(id)) paint(l, "line-color", C.edge);
-        else if (/boundary/.test(id)) paint(l, "line-color", C.edge);
-        else if (/minor|path|service|track/.test(id)) paint(l, "line-color", C["road-2"]);
-        else paint(l, "line-color", C.road);
-      } else if (l.type === "symbol" && l.layout && l.layout["text-field"]) {
-        paint(l, "text-color", /water/.test(id) ? C.edge : C.label);
-        paint(l, "text-halo-color", C.land); paint(l, "text-halo-width", 1.3);
-      }
-    }
-    const name = ["coalesce", ["get", "name_en"], ["get", "name"]];
     const lay = id => s.layers.find(l => l.id === id);
-    if (lay("highway-name-minor")) lay("highway-name-minor").minzoom = 14.3;   // street names a little earlier than stock
-    if (lay("highway-name-major")) lay("highway-name-major").minzoom = 12;
-    if (lay("label_other")) { const l = lay("label_other"); l.layout = { ...l.layout, "text-transform": "uppercase", "text-letter-spacing": .08 }; paint(l, "text-color", C.ink); paint(l, "text-opacity", .7); }
-    s.layers.push({ id: "bs-park", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 13.5, filter: ["==", ["get", "class"], "park"],
-      layout: { "text-field": name, "text-font": ["Noto Sans Italic"], "text-size": 11, "text-max-width": 8 },
-      paint: { "text-color": C.label, "text-halo-color": C.land, "text-halo-width": 1.3 } });
-    s.layers.push({ id: "bs-poi", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 16.3,
-      filter: ["!", ["match", ["get", "class"], ["railway", "bus", "park"], true, false]],
-      layout: { "text-field": name, "text-font": ["Noto Sans Regular"], "text-size": 10.5, "text-max-width": 8 },
-      paint: { "text-color": C.label, "text-opacity": .8, "text-halo-color": C.land, "text-halo-width": 1.2 } });
-    s.layers.push({ id: "bs-station", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 13.5, filter: ["==", ["get", "class"], "railway"],
-      layout: { "text-field": name, "text-font": ["Noto Sans Bold"], "text-size": 10.5, "text-anchor": "top", "text-offset": [0, .4] },
-      paint: { "text-color": C.label, "text-halo-color": C.land, "text-halo-width": 1.3 } });
-    s.layers.push({ id: "bs-housenumber", type: "symbol", source: "openmaptiles", "source-layer": "housenumber", minzoom: 17.2,
-      layout: { "text-field": ["get", "housenumber"], "text-font": ["Noto Sans Regular"], "text-size": 10 },
-      paint: { "text-color": C.label, "text-opacity": .6 } });
+    const P = (ids, k, v) => [].concat(ids).forEach(id => { const l = lay(id); if (l) (l.paint ||= {})[k] = v; });
+    const land = "#eef0f2", bld = "#d8dce1", ink = "#2a3038", txt = "#59616a", halo = "#f5f6f7";
+    P("background", "background-color", land);
+    P("landuse_residential", "fill-color", "#eaecef");
+    P("park", "fill-color", "#dbe5de"); P("landcover_wood", "fill-color", "#d5e0d8");
+    P("water", "fill-color", "#ccd5dd"); P("waterway", "line-color", "#bfc9d2");
+    P("building", "fill-color", bld); P("building", "fill-outline-color", "#c9ced4");
+    P(["highway_minor", "highway_major_inner", "highway_motorway_inner", "highway_motorway_bridge_inner", "tunnel_motorway_inner", "road_pier"], "line-color", "#ffffff");
+    P("highway_path", "line-color", "#fbfbfc");
+    P(["highway_major_casing", "highway_motorway_casing", "highway_motorway_bridge_casing", "tunnel_motorway_casing"], "line-color", "#d0d5db");
+    P(["railway", "railway_transit", "railway_service"], "line-color", "#c6ccd3");
+    P(["highway-name-path", "highway-name-minor", "highway-name-major"], "text-color", txt);
+    P(["highway-name-path", "highway-name-minor", "highway-name-major"], "text-halo-color", halo);
+    P(["highway-name-path", "highway-name-minor", "highway-name-major"], "text-halo-width", 1.4);
+    s.layers.filter(l => /^label_/.test(l.id)).forEach(l => { l.paint = { ...l.paint, "text-color": ink, "text-halo-color": land, "text-halo-width": 1.4, "text-halo-blur": 0 }; });
+    P(["water_name_point_label", "water_name_line_label", "waterway_line_label"], "text-color", "#61778a");
+    // the building layer starts a little earlier, and street names one zoom earlier, than stock positron
+    if (lay("building")) lay("building").minzoom = 13;
+    if (lay("highway-name-minor")) lay("highway-name-minor").minzoom = 14.5;
+    // extra detail positron leaves out: house numbers, tram and rail stops, parks and places
+    const name = ["coalesce", ["get", "name_en"], ["get", "name"]];
+    const extra = [
+      { id: "bs-housenumber", type: "symbol", source: "openmaptiles", "source-layer": "housenumber", minzoom: 17,
+        layout: { "text-field": ["get", "housenumber"], "text-font": ["Noto Sans Regular"], "text-size": 10 },
+        paint: { "text-color": "#98a0a8", "text-halo-color": bld, "text-halo-width": 1 } },
+      { id: "bs-poi", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 16.5,
+        filter: ["!", ["match", ["get", "class"], ["railway", "bus", "park"], true, false]],
+        layout: { "text-field": name, "text-font": ["Noto Sans Regular"], "text-size": 10.5, "text-max-width": 8 },
+        paint: { "text-color": "#80878f", "text-halo-color": halo, "text-halo-width": 1.2 } },
+      { id: "bs-park", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 14,
+        filter: ["==", ["get", "class"], "park"],
+        layout: { "text-field": name, "text-font": ["Noto Sans Italic"], "text-size": 11, "text-max-width": 8 },
+        paint: { "text-color": "#5f7d68", "text-halo-color": halo, "text-halo-width": 1.2 } },
+      { id: "bs-station", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 13.5,
+        filter: ["==", ["get", "class"], "railway"],
+        layout: { "text-field": name, "text-font": ["Noto Sans Bold"], "text-size": 10.5, "text-max-width": 9, "text-anchor": "top", "text-offset": [0, .5] },
+        paint: { "text-color": "#3e5568", "text-halo-color": halo, "text-halo-width": 1.4 } },
+      { id: "bs-station-dot", type: "circle", source: "openmaptiles", "source-layer": "poi", minzoom: 13.5,
+        filter: ["==", ["get", "class"], "railway"],
+        paint: { "circle-radius": 3, "circle-color": "#ffffff", "circle-stroke-color": "#3e5568", "circle-stroke-width": 1.4 } },
+    ];
+    const at = s.layers.findIndex(l => l.id === "highway-name-path");
+    s.layers.splice(at < 0 ? s.layers.length : at, 0, ...extra);
     return s;
   }
   (async () => {
@@ -440,25 +614,37 @@
       if (!window.maplibregl) return;
       const m = new maplibregl.Map({
         container: "mapgl", style: paletteStyle(), bounds: [[box.w, box.s], [box.e, box.n]], fitBoundsOptions: { padding: pad() },
-        attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, keyboard: false,
-        cooperativeGestures: true, minZoom: 9.5, maxZoom: 18.5, fadeDuration: 0,
+        attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, keyboard: true,
+        cooperativeGestures: coarse, minZoom: 9.5, maxZoom: 19, fadeDuration: 0,
       });
       m.touchZoomRotate.disableRotation();
+      m.keyboard.disableRotation();
+      m.on("dragstart", stopFollowing);
+      m.addControl(new maplibregl.ScaleControl({unit: "metric"}), "bottom-right");
       m.on("style.load", () => { if (gl) addStops(m); });
-      m.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }), "bottom-right");
+      m.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-right");
       let on = false;
       const swap = () => {                                  // only once the first street tiles are drawn, so the map is never blank
-        if (on) return; on = true; gl = m;
+        if (on) return; on = true;
+        if (moved) m.jumpTo({center: fromWorld(view.x, view.y), zoom: view.z});
+        gl = m;
         card.classList.add("street"); baseCv.hidden = true; drawLabels();
         addStops(m);
-        m.on("move", () => { syncView(); if (!playing || !visible) frame(T); });
+        $("#mMapStatus").textContent = "Live street map · OpenStreetMap";
+        m.getCanvas().setAttribute("aria-label", "Edinburgh street map. Use arrow keys to pan, plus and minus to zoom.");
+        m.on("render", () => { syncView(); frame(T); });
+        m.scrollZoom.setWheelZoomRate(1 / 300); m.scrollZoom.setZoomRate(1 / 80);
+        m.on("mousemove", "bs-stops", e => { const f = e.features[0]; m.getCanvas().style.cursor = "pointer"; showTip(f.id, e.point.x, e.point.y); });
+        m.on("mouseleave", "bs-stops", () => { m.getCanvas().style.cursor = ""; hideTip(); });
+        m.on("click", "bs-stops", e => showTip(e.features[0].id, e.point.x, e.point.y));
+        m.on("movestart", hideTip);
         syncView(); frame(T);
       };
       m.once("idle", swap);
-      setTimeout(() => { if (!on && m.loaded()) swap(); }, 9000);
-    } catch (e) { /* keep the vector map */ }
+      setTimeout(() => { if (!on && m.loaded()) swap(); else if (!on) $("#mMapStatus").textContent = "Offline overview · street tiles still loading"; }, 12000);
+    } catch (e) { $("#mMapStatus").textContent = "Offline overview · street tiles unavailable"; }
   })();
-  const retheme = () => { readColours(); drawBase(); if (gl && rawStyle) gl.setStyle(paletteStyle(), { diff: false }); frame(T); };
+  const retheme = () => { readColours(); drawBase(); frame(T); };
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
   new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 

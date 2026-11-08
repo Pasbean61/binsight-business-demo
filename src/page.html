@@ -34,21 +34,36 @@
       </div>
     </div>
     <figure class="mapfig">
+      <div class="map-tools">
+        <form id="mLocate"><label for="mSearch">Explore Edinburgh</label><div class="map-search-row"><input id="mSearch" list="mPlaces" placeholder="Street or neighbourhood" autocomplete="off"><datalist id="mPlaces"></datalist><button type="submit">Go</button></div></form>
+        <label>Follow a truck<select id="mFollow"><option value="-1">All trucks</option></select></label>
+        <label>Replay speed<select id="mSpeed"><option value="1">1×</option><option value="3">3×</option><option value="10">10×</option></select></label>
+        <div class="map-layers"><label><input type="checkbox" id="mShowBins" checked> Bin stops</label><label><input type="checkbox" id="mShowRoutes" checked> Routes</label></div>
+        <button id="mExpand" type="button">Full screen</button>
+      </div>
+      <div class="map-status"><span id="mMapStatus" role="status">Loading street map…</span><span id="mSearchStatus" role="status"></span></div>
       <div class="mapcard" id="mapcard">
         <div class="mapgl" id="mapgl"></div>
         <canvas id="mapBase" aria-hidden="true"></canvas>
         <canvas id="map" role="img" aria-label="Map of Edinburgh replaying tomorrow's plan: 34 collection trucks drive their planned routes from 06:00 and empty the bins forecast to be full"></canvas>
         <div class="map-top">
-          <div class="map-time"><div class="map-clock num" id="mClock">06:00</div><div class="map-day" id="mDay">Tuesday 3 November · Edinburgh</div></div>
-          <div class="map-legend" aria-hidden="true">
-            <span><i id="lgFull"></i>forecast to be full</span>
+          <div class="map-time">
+            <div class="map-time-row"><button type="button" id="mPlay" class="map-play" aria-label="Pause the replay"></button><div><div class="map-clock num" id="mClock">06:00</div><div class="map-day" id="mDay">Tuesday 3 November · Edinburgh</div></div></div>
+            <input type="range" id="mTime" min="0" max="485" step="1" value="0" aria-label="Time of day in the replay, 06:00 to 14:00">
+            <div class="map-scale" aria-hidden="true"><span>06:00</span><span>10:00</span><span>14:00</span></div>
+          </div>
+          <div class="map-legend">
+            <strong>Projected fill · simulated</strong>
+            <span><i style="background:#c84630"></i>90% and over</span>
+            <span><i style="background:#e28740"></i>80–90%</span>
+            <span><i style="background:#e6bd56"></i>60–80%</span>
+            <span><i style="background:#8fbda8"></i>35–60%</span>
+            <span><i style="background:#c7d8d0"></i>Under 35%</span>
             <span><i id="lgDone"></i>emptied</span>
-            <span><i id="lgSkip"></i>can wait</span>
             <span><i id="lgTruck"></i>truck</span>
           </div>
         </div>
         <div class="map-ctl">
-          <button type="button" id="mPlay" class="wide" aria-label="Pause the replay">Pause</button>
           <button type="button" id="mZoomIn" aria-label="Zoom in">+</button>
           <button type="button" id="mZoomOut" aria-label="Zoom out">−</button>
           <button type="button" id="mReset" aria-label="Show the whole city"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M1.5 5V1.5H5M9 1.5h3.5V5M12.5 9v3.5H9M5 12.5H1.5V9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -59,7 +74,7 @@
           <div><b id="mKm">0</b><span>km driven</span></div>
         </div>
       </div>
-      <figcaption class="map-caption"><span class="tag real">Real</span> Edinburgh streets, all <span data-f="stops">4,532</span> communal bin stops and tomorrow’s 34 truck routes, drawn to scale. <span class="tag sim">Simulated</span> fill levels. Drag to explore, and zoom in to street level.</figcaption>
+      <figcaption class="map-caption"><span class="tag real">Real</span> Edinburgh streets, buildings and place names from OpenStreetMap, with <span data-f="stops">4,532</span> council bin stops at their geographic coordinates. <span class="tag sim">Simulated</span> fill levels and collection routes. Scroll or pinch to street level, drag to explore, and click a bin for its plan.</figcaption>
     </figure>
   </div>
 </section>

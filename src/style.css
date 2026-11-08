@@ -417,3 +417,80 @@ ol.fit span { color: var(--ink-2); font-size: 15px; }
 @keyframes ping { from { opacity: .95; } to { opacity: 0; } }
 #echoWaves path { animation: ping 1.4s ease-out infinite; }
 @media (prefers-reduced-motion: reduce) { #echoWaves path { animation: none; opacity: .6; } }
+
+/* map: replay controls, hover card */
+.map-time { pointer-events: auto; min-width: 238px; }
+.map-time-row { display: flex; gap: 11px; align-items: center; }
+.map-play { width: 38px; height: 38px; border-radius: 50%; border: 0; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; cursor: pointer; flex: none; box-shadow: 0 2px 8px rgba(13, 118, 86, .3); }
+.map-play:hover { filter: brightness(1.08); }
+#mTime { -webkit-appearance: none; appearance: none; width: 100%; height: 18px; margin: 10px 0 0; background: transparent; cursor: pointer; display: block; }
+#mTime::-webkit-slider-runnable-track { height: 4px; border-radius: 99px; background: linear-gradient(90deg, var(--accent) var(--p, 0%), var(--map-edge) var(--p, 0%)); }
+#mTime::-moz-range-track { height: 4px; border-radius: 99px; background: var(--map-edge); }
+#mTime::-moz-range-progress { height: 4px; border-radius: 99px; background: var(--accent); }
+#mTime::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; margin-top: -5px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); box-shadow: 0 1px 3px rgba(0, 0, 0, .2); }
+#mTime::-moz-range-thumb { width: 12px; height: 12px; border-radius: 50%; background: var(--surface); border: 2px solid var(--accent); }
+.map-scale { display: flex; justify-content: space-between; font: 500 10.5px var(--mono); color: var(--map-ink-2); margin-top: 2px; }
+.map-tip { position: absolute; left: 0; top: 0; z-index: 4; pointer-events: none; display: grid; gap: 2px; min-width: 180px; max-width: 260px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--map-wait); border-radius: 12px; padding: 9px 12px;
+  box-shadow: 0 8px 26px rgba(0, 0, 0, .14); font-size: 12.5px; line-height: 1.4; }
+.map-tip.done { border-left-color: var(--map-done); } .map-tip.due { border-left-color: var(--map-full); }
+.map-tip b { font: 700 14px/1.25 var(--display); }
+.map-tip span { color: var(--ink-2); }
+.map-tip em { font-style: normal; font-weight: 600; color: var(--ink); margin-top: 3px; }
+.mapcard.coarse canvas { touch-action: pan-y; }
+@media (max-width: 520px) { .map-time { min-width: 0; width: min(100%, 260px); } .map-play { width: 34px; height: 34px; } }
+
+/* The map intentionally keeps the research site's readable platinum palette in both page themes. */
+.mapcard {
+  color-scheme: light;
+  --map-bg:#f5f6f7; --map-land:#eef0f2; --map-edge:#c9ced4; --map-road:#fff; --map-road-2:#fbfbfc;
+  --map-park:#dbe5de; --map-water:#ccd5dd; --map-building:#d8dce1; --map-label:#59616a;
+  --map-ink:#2a3038; --map-ink-2:#59616a; --map-full:#e28740; --map-done:#167e68; --map-wait:#8fbda8;
+  --map-truck:#2e80ba; --map-truck-ring:rgba(46,128,186,.18); --map-glass:rgba(255,255,255,.94); --map-glass-edge:#d4dce0;
+  --surface:#fff; --ink:#2a3038; --ink-2:#59616a; --line:#d4dce0; --accent:#0d7656; --accent-ink:#fff;
+}
+/* Explicit display is essential: the canvas rule otherwise overrides the native hidden attribute. */
+.mapcard [hidden] { display:none !important; }
+.mapcard.street #mapBase, .mapcard.street .map-labels { display:none; pointer-events:none; }
+.mapgl { z-index:0; }
+#mapBase { z-index:1; }
+#map { z-index:2; }
+.map-labels { z-index:2; }
+.mapcard .maplibregl-control-container { position:static; }
+.mapcard .maplibregl-ctrl-scale { background:rgba(255,255,255,.9); color:#2a3038; border-color:#59616a; }
+.mapcard .maplibregl-ctrl-attrib { color:#59616a; background:rgba(255,255,255,.93); }
+.mapcard .maplibregl-ctrl-attrib a { color:#46505c; }
+.map-stats { bottom:36px; }
+.map-tip { max-width:min(260px, calc(100% - 16px)); }
+.map-tools { display:flex; flex-wrap:wrap; gap:12px; align-items:end; padding:16px; border:1px solid var(--line); border-radius:16px; background:var(--surface); }
+.map-tools label { display:grid; gap:5px; font-size:12px; font-weight:600; color:var(--ink-2); }
+#mLocate { flex:1; min-width:220px; }
+.map-search-row { display:flex; gap:6px; margin-top:5px; }
+.map-tools input:not([type=checkbox]), .map-tools select, .map-tools button { min-height:42px; border:1px solid var(--line-2); background:var(--paper); color:var(--ink); border-radius:9px; padding:8px 12px; font:500 14px var(--body); }
+#mSearch { width:100%; min-width:0; }
+.map-tools button { cursor:pointer; }
+.map-tools button:hover { border-color:var(--accent); }
+.map-tools button[type=submit] { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+.map-layers { display:grid; gap:7px; padding:3px 4px; }
+.map-layers label { display:flex; align-items:center; gap:7px; }
+.map-layers input { accent-color:var(--accent); width:16px; height:16px; }
+.map-status { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; padding:9px 3px; font-size:12px; color:var(--ink-3); min-height:35px; }
+.map-legend strong { font-size:11px; margin-bottom:3px; }
+.mapfig:fullscreen, .mapfig.map-expanded { background:var(--paper); padding:16px; margin:0; display:flex; flex-direction:column; width:100%; height:100%; }
+.mapfig.map-expanded { position:fixed; inset:0; z-index:100; }
+.mapfig:fullscreen .mapcard, .mapfig.map-expanded .mapcard { flex:1; aspect-ratio:auto; min-height:0; }
+.mapfig:fullscreen .map-caption, .mapfig.map-expanded .map-caption { font-size:12px; }
+@media(max-width:600px) {
+  .map-tools { gap:10px; padding:12px; }
+  #mLocate { flex-basis:100%; }
+  .map-tools > label { flex:1; }
+  .map-tools select { width:100%; }
+  .map-layers { display:flex; flex:1; flex-wrap:wrap; }
+  .map-legend { max-width:240px; gap:3px 9px; }
+  .map-legend strong { flex-basis:100%; }
+  .map-top { gap:7px; }
+  .mapcard { min-height:560px; }
+  .map-stats { bottom:46px; }
+  .mapfig:fullscreen, .mapfig.map-expanded { padding:8px; }
+  .mapfig:fullscreen .map-caption, .mapfig.map-expanded .map-caption { display:none; }
+}
