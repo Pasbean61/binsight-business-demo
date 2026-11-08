@@ -45,9 +45,12 @@ facts = {
     "sim_start": site["experiments"]["eval_start"],
     "wards_plan": [{"name": w["name"], "stops": w["stops"], "flagged": w["flagged"], "served": w["served"], "trucks": len(w["trucks"])} for w in site["wards"]],
 }
+# the light vector map used when street tiles can't load (inside an artifact, or offline)
 basemap = {"wards": [{"name": w["name"], "rings": w["rings"]} for w in base["wards"]],
-           "roads": base["roads"].get("major", []), "water": [w["line"] for w in base["water"]],
-           "parks": [p["ring"] for p in base["parks"] if p.get("k") == "park"][:160]}
+           "roads": {k: base["roads"].get(k, []) for k in ("local", "minor", "major")},
+           "water": [w["line"] for w in base["water"]],
+           "lakes": [p["ring"] for p in base["parks"] if p.get("k") == "water"],
+           "parks": [p["ring"] for p in base["parks"] if p.get("k") == "park"]}
 out = {"facts": facts, "names": names, "stops": S, "trucks": trucks, "depot": routes["depot"], "base": basemap}
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 json.dump(out, open(OUT, "w"), separators=(",", ":"), allow_nan=False)

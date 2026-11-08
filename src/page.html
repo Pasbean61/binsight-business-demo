@@ -5,7 +5,7 @@
       BinSight
     </a>
     <nav class="links" aria-label="Sections">
-      <a href="#how">How it works</a><a href="#product">Product</a><a href="#pricing">Pricing</a><a href="#savings">Savings</a><a href="#compare">Compare</a><a href="#faq">FAQ</a>
+      <a href="#how">How it works</a><a href="#product">Product</a><a href="#sensor">Sensor</a><a href="#pricing">Pricing</a><a href="#savings">Savings</a><a href="#compare">Compare</a><a href="#faq">FAQ</a>
     </nav>
     <a class="btn primary sm" href="#pilot">Book a pilot</a>
   </div>
@@ -14,41 +14,53 @@
 <main id="top">
 <!-- HERO -->
 <section class="hero">
-  <div class="wrap hero-grid">
-    <div>
-      <span class="eyebrow">Forecast-led collection for communal bins</span>
-      <h1>Empty the bins that are full. <em>Pay only from what you save.</em></h1>
-      <p class="lede">BinSight forecasts how full every communal bin will be tomorrow and plans your rounds overnight, so trucks go where the waste is. There is nothing to buy upfront: our fee is a share of the savings we verify, and we credit you for every overflow above target.</p>
-      <div class="cta">
-        <a class="btn primary" href="#savings">Estimate your savings</a>
-        <a class="btn ghost" href="#pilot">Book a free 90-day pilot</a>
+  <div class="wrap">
+    <div class="hero-grid">
+      <div>
+        <span class="eyebrow">Forecast-led collection for communal bins</span>
+        <h1>Empty the bins that are full. <em>Pay only from what you save.</em></h1>
       </div>
-      <ul class="assure">
-        <li>Works with the sensors you already have</li>
-        <li>£0 upfront</li>
-        <li>Savings checked against control areas</li>
-      </ul>
+      <div class="hero-side">
+        <p class="lede">BinSight forecasts how full every communal bin will be tomorrow and plans your rounds overnight, so trucks go where the waste is. Nothing to buy upfront: our fee is a share of the savings we verify, and the sensors come free.</p>
+        <div class="cta">
+          <a class="btn primary" href="#savings">Estimate your savings</a>
+          <a class="btn ghost" href="#pilot">Book a free 90-day pilot</a>
+        </div>
+        <ul class="assure">
+          <li>Free sensor with every bin</li>
+          <li>£0 upfront</li>
+          <li>Savings checked against control areas</li>
+        </ul>
+      </div>
     </div>
-    <div>
+    <figure class="mapfig">
       <div class="mapcard" id="mapcard">
-        <canvas id="map" aria-label="Animated map of Edinburgh: tomorrow's collection trucks driving their planned routes and emptying the bins forecast to be full"></canvas>
+        <div class="mapgl" id="mapgl"></div>
+        <canvas id="mapBase" aria-hidden="true"></canvas>
+        <canvas id="map" role="img" aria-label="Map of Edinburgh replaying tomorrow's plan: 34 collection trucks drive their planned routes from 06:00 and empty the bins forecast to be full"></canvas>
         <div class="map-top">
-          <div><div class="map-clock num" id="mClock">06:00</div><div class="map-day" id="mDay">Tuesday 3 November · Edinburgh</div></div>
+          <div class="map-time"><div class="map-clock num" id="mClock">06:00</div><div class="map-day" id="mDay">Tuesday 3 November · Edinburgh</div></div>
           <div class="map-legend" aria-hidden="true">
             <span><i id="lgFull"></i>forecast to be full</span>
             <span><i id="lgDone"></i>emptied</span>
             <span><i id="lgSkip"></i>can wait</span>
+            <span><i id="lgTruck"></i>truck</span>
           </div>
         </div>
-        <button class="map-btn" type="button" id="mPlay" aria-label="Pause the animation">Pause</button>
+        <div class="map-ctl">
+          <button type="button" id="mPlay" class="wide" aria-label="Pause the replay">Pause</button>
+          <button type="button" id="mZoomIn" aria-label="Zoom in">+</button>
+          <button type="button" id="mZoomOut" aria-label="Zoom out">−</button>
+          <button type="button" id="mReset" aria-label="Show the whole city"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M1.5 5V1.5H5M9 1.5h3.5V5M12.5 9v3.5H9M5 12.5H1.5V9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+        </div>
         <div class="map-stats">
           <div><b id="mBins">0</b><span>of <span data-f="served">2,127</span> bin stops emptied</span></div>
           <div><b id="mTrucks">0</b><span>trucks on the road</span></div>
           <div><b id="mKm">0</b><span>km driven</span></div>
         </div>
       </div>
-      <p class="map-caption"><span class="tag real">Real</span> bin stops, streets and routes for Edinburgh’s <span data-f="stops">4,532</span> communal bin stops. <span class="tag sim">Simulated</span> fill levels.</p>
-    </div>
+      <figcaption class="map-caption"><span class="tag real">Real</span> Edinburgh streets, all <span data-f="stops">4,532</span> communal bin stops and tomorrow’s 34 truck routes, drawn to scale. <span class="tag sim">Simulated</span> fill levels. Drag to explore, and zoom in to street level.</figcaption>
+    </figure>
   </div>
 </section>
 
@@ -89,7 +101,7 @@
       <p>BinSight sits between the sensors and the depot. Crews keep their trucks, shifts and depot. What changes is which bins they visit and in what order.</p>
     </div>
     <ol class="steps">
-      <li><h3>Sense</h3><p>We read the fill sensors you already own, from any make. No sensors yet? We fit ours at no cost.</p></li>
+      <li><h3>Sense</h3><p>Our free sensor sits under each bin lid and measures how full it is. Already have sensors? We read those too.</p></li>
       <li><h3>Forecast</h3><p>Each night we forecast every bin’s fill for the next day from its own history, the weather and holidays.</p></li>
       <li><h3>Plan</h3><p>Bins forecast to pass 80 % go first. Routes are built for your fleet, with tipping runs, shift limits and rain built in.</p></li>
       <li><h3>Collect</h3><p>Crews follow the run sheet in the driver app. Residents report problems in theirs, and the next plan learns from it.</p></li>
@@ -147,6 +159,71 @@
   </div>
 </section>
 
+<!-- SENSOR -->
+<section id="sensor">
+  <div class="wrap">
+    <div class="sensor">
+      <div class="stage" id="stage">
+        <canvas id="sensor3d" role="img" aria-label="3D model of the BinSight sensor: an HC-SR04 ultrasonic module with two round transducers on a blue circuit board"></canvas>
+        <div class="hotspots" aria-hidden="true">
+          <span class="hs" data-hs="t"><i></i>Sends a 40 kHz ping</span>
+          <span class="hs" data-hs="r"><i></i>Hears the echo</span>
+          <span class="hs" data-hs="x"><i></i>Crystal keeps the timing</span>
+          <span class="hs" data-hs="p"><i></i>Power and data</span>
+        </div>
+        <span class="stage-tag">BinSight Sense · actual size 45 × 20 mm</span>
+        <span class="stage-hint" id="stageHint">Drag to turn it</span>
+        <p class="stage-fallback" id="stageFallback" hidden>The 3D model needs an internet connection to load.</p>
+      </div>
+      <div class="sensor-copy">
+        <span class="eyebrow">The sensor</span>
+        <h2>Free with the service. Put it on the bin, and you’re done.</h2>
+        <p class="lede">Every BinSight plan comes with a sensor for each communal bin, at no cost. It sits under the lid, looks down at the rubbish and tells our system how full the bin is. No wiring, no set-up visit, nothing to configure.</p>
+        <ol class="fit">
+          <li><b>We send it</b><span>One sensor per bin, already linked to that bin’s address.</span></li>
+          <li><b>You put it on</b><span>Fix it under the lid, facing down. That is the whole installation.</span></li>
+          <li><b>It reports</b><span>Readings flow into the nightly forecast, and tomorrow’s routes come from them.</span></li>
+        </ol>
+        <div class="cost">
+          <div class="cost-n">£2<small>.00</small></div>
+          <p><b>What the sensing module costs us.</b> We start from the HC-SR04, a proven off-the-shelf ultrasonic module (£2.00 retail at <a href="https://thepihut.com/products/ultrasonic-distance-sensor-hcsr04" target="_blank" rel="noopener">The Pi Hut</a>), and run the BinSight system on it. That is one thirtieth of the £60 we count for a single overflowing bin.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="echo">
+      <svg id="echoSvg" viewBox="0 0 240 280" aria-hidden="true">
+        <defs>
+          <linearGradient id="binG" x1="0" x2="1"><stop offset="0" stop-color="var(--bin-a)"/><stop offset="1" stop-color="var(--bin-b)"/></linearGradient>
+          <clipPath id="binClip"><path d="M44 58h152l-10 196a10 10 0 0 1-10 9H64a10 10 0 0 1-10-9z"/></clipPath>
+        </defs>
+        <path d="M44 58h152l-10 196a10 10 0 0 1-10 9H64a10 10 0 0 1-10-9z" fill="url(#binG)" stroke="var(--line-2)"/>
+        <g clip-path="url(#binClip)"><rect id="echoWaste" x="40" y="160" width="160" height="110" fill="var(--waste)"/><path id="echoTop" d="" fill="var(--waste-2)"/></g>
+        <rect x="34" y="44" width="172" height="14" rx="5" fill="var(--ink)"/>
+        <rect x="108" y="58" width="24" height="8" rx="2" fill="var(--sensor-blue)"/>
+        <circle cx="114" cy="66" r="3.4" fill="var(--sensor-can)"/><circle cx="126" cy="66" r="3.4" fill="var(--sensor-can)"/>
+        <g id="echoWaves" fill="none" stroke="var(--wave)" stroke-width="2.2" stroke-linecap="round"></g>
+        <line id="echoLine" x1="210" y1="66" x2="210" y2="160" stroke="var(--ink-3)" stroke-dasharray="3 3"/>
+        <path id="echoArrA" d="" fill="var(--ink-3)"/><path id="echoArrB" d="" fill="var(--ink-3)"/>
+      </svg>
+      <div class="echo-copy">
+        <h3>How it measures</h3>
+        <p>The sensor sends a short 40 kHz ping and times the echo off the rubbish. Sound travels about 343 metres a second, so the time tells it the distance, and the distance tells it how full the bin is.</p>
+        <div class="field">
+          <label for="eFill">How full is the bin? <output id="oFill" class="num">65%</output></label>
+          <input type="range" id="eFill" min="0" max="100" step="1" value="65">
+        </div>
+        <div class="echo-out">
+          <div><b id="eTime" class="num">–</b><span>echo time</span></div>
+          <div><b id="eDist" class="num">–</b><span>to the rubbish</span></div>
+          <div><b id="ePct" class="num">–</b><span>fill reading</span></div>
+        </div>
+        <p class="small muted">Example: a bin 1.2 m deep. Module data: 40 kHz, 2 cm to 4 m range, about 3 mm resolution, 15° beam.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- RESIDENT LOOKUP -->
 <section id="residents">
   <div class="wrap lookup">
@@ -190,7 +267,7 @@
         <h3>Savings Share</h3>
         <div class="price">25 %<small>of verified savings. £0 upfront.</small></div>
         <ul>
-          <li>Uses your sensors, or we fit ours free</li>
+          <li>A free BinSight sensor for every bin</li>
           <li><b>Overflow guarantee:</b> £60 credit for every overflow above the pilot baseline</li>
           <li>Monthly savings statement, open to your auditors</li>
           <li>No verified saving, no bill</li>
@@ -213,9 +290,10 @@
       <div class="plan">
         <span class="who">Estates and campuses</span>
         <h3>BinSight Estates</h3>
-        <div class="price">£4<small>per bin a month, sensor included</small></div>
+        <div class="price">£4<small>per bin a month</small></div>
         <ul>
           <li>For housing associations, universities, student halls and hotels</li>
+          <li>Free BinSight sensor on every bin</li>
           <li>Your contractor is called only when a bin is nearly full</li>
           <li>Overflow alerts to your site team</li>
           <li>First month free, cancel any month</li>
@@ -282,9 +360,9 @@
       <table class="vs">
         <thead><tr><th scope="col"></th><th scope="col">Fixed timetable</th><th scope="col">Sensors + licence</th><th scope="col">Route-planning software</th><th scope="col" class="us">BinSight</th></tr></thead>
         <tbody>
-          <tr><th scope="row">Upfront cost</th><td>None</td><td>Hardware purchase</td><td>Licence and set-up</td><td class="us">£0</td></tr>
+          <tr><th scope="row">Upfront cost</th><td>None</td><td>Hardware purchase</td><td>Licence and set-up</td><td class="us">£0, sensors included</td></tr>
           <tr><th scope="row">Who carries the risk</th><td>You</td><td>You</td><td>You</td><td class="us">Us: no saving, no fee</td></tr>
-          <tr><th scope="row">Uses sensors you already own</th><td class="no">n/a</td><td class="no">Usually its own devices</td><td class="no">Rarely</td><td class="us yes">Any make</td></tr>
+          <tr><th scope="row">Uses sensors you already own</th><td class="no">n/a</td><td class="no">Usually its own devices</td><td class="no">Rarely</td><td class="us yes">Yes, or ours free</td></tr>
           <tr><th scope="row">Forecasts each bin for tomorrow</th><td class="no">No</td><td>Fill alerts</td><td class="no">No</td><td class="us yes">Every bin, every night</td></tr>
           <tr><th scope="row">Plans the routes</th><td>Fixed rounds</td><td class="no">Often not</td><td class="yes">Yes</td><td class="us yes">Daily, fullest first</td></tr>
           <tr><th scope="row">Overflow guarantee</th><td class="no">No</td><td class="no">No</td><td class="no">No</td><td class="us yes">£60 credit each</td></tr>
@@ -326,7 +404,7 @@
       <p>Something else on your mind? Book a pilot call and bring your collection data. We’ll show you the plan your rounds would get.</p>
     </div>
     <div class="faq">
-      <details open><summary>Do we need new sensors?</summary><p>No, if you already have fill sensors: BinSight reads any make. Edinburgh, for example, already has about 11,000 bin sensors. Where there are none, we fit ours at no cost under Savings Share and maintain them.</p></details>
+      <details open><summary>Do we need to buy sensors?</summary><p>No. Every BinSight plan includes our sensor free, one per bin: you put it under the lid and it starts reporting. If you already have fill sensors, BinSight can read those as well. Edinburgh, for example, already has about 11,000.</p></details>
       <details><summary>How exactly is the saving calculated?</summary><p>Before go-live, we agree the cost per kilometre, per truck-hour and per overflow with your finance team. Each month we compare BinSight areas with matched control areas still on the timetable. The saving is the difference in cost per bin stop, multiplied by the stops on BinSight. Your auditors can see every number.</p></details>
       <details><summary>What if the savings don’t appear?</summary><p>Then you pay nothing. If overflows rise above the baseline set in your pilot, we credit £60 for each one, whatever the savings.</p></details>
       <details><summary>Will crews lose shifts?</summary><p>That is your choice. Freed hours can cut overtime and agency cover, absorb peaks like the festivals or student move-out, or be sold as Spare Shift services so the same crews earn new income for the council.</p></details>

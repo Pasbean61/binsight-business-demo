@@ -59,38 +59,39 @@
     return out;
   }
 
-  /* ---------- projection: metres east/south of the stops' centre ---------- */
+  /* ---------- projection: Web Mercator, the same one the street map uses, so everything lines up 1:1 ---------- */
+  const R2D = Math.PI / 180;
+  const wx = lo => (lo + 180) / 360;
+  const wy = la => { const s = Math.sin(la * R2D); return .5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI); };
+  const toW = ([la, lo]) => [wx(lo), wy(la)];
+  const M_PER_UNIT = 40075016.686 * Math.cos(55.95 * R2D);           // metres per world unit around Edinburgh
   // frame the map on where the bins are: the 1st to 99th percentile of stops, so a few outlying villages don't shrink the city
   const quant = (a, p) => { const s = a.slice().sort((x, y) => x - y); return s[Math.floor(p * (s.length - 1))]; };
-  const padLa = (quant(S.lat, .99) - quant(S.lat, .01)) * .05, padLo = (quant(S.lon, .99) - quant(S.lon, .01)) * .05;
-  const minLa = quant(S.lat, .01) - padLa, maxLa = quant(S.lat, .99) + padLa, minLo = quant(S.lon, .01) - padLo, maxLo = quant(S.lon, .99) + padLo;
-  const la0 = (minLa + maxLa) / 2, lo0 = (minLo + maxLo) / 2;
-  const KX = 111320 * Math.cos(la0 * Math.PI / 180), KY = 110540;
-  const mx = lo => (lo - lo0) * KX, my = la => (la0 - la) * KY;
-  const toM = ([la, lo]) => [mx(lo), my(la)];
-  const ext = { x0: mx(minLo), x1: mx(maxLo), y0: my(maxLa), y1: my(minLa) };
+  const box = { s: quant(S.lat, .01), n: quant(S.lat, .99), w: quant(S.lon, .01), e: quant(S.lon, .99) };
 
-  const stopX = Float32Array.from(S.lon, mx), stopY = Float32Array.from(S.lat, my);
-  const depot = [mx(D.depot.longitude), my(D.depot.latitude)];
+  const stopX = Float64Array.from(S.lon, wx), stopY = Float64Array.from(S.lat, wy);
+  const depot = [wx(D.depot.longitude), wy(D.depot.latitude)];
+  const B = D.base;
   const base = {
-    wards: D.base.wards.map(w => w.rings.map(r => decode(r).map(toM))),
-    parks: D.base.parks.map(r => decode(r).map(toM)),
-    water: D.base.water.map(l => decode(l).map(toM)),
-    roads: D.base.roads.map(l => decode(l).map(toM)),
+    wards: B.wards.map(w => w.rings.map(r => decode(r).map(toW))),
+    parks: B.parks.map(r => decode(r).map(toW)),
+    lakes: (B.lakes || []).map(r => decode(r).map(toW)),
+    water: B.water.map(l => decode(l).map(toW)),
+    roads: Object.fromEntries(Object.entries(B.roads).map(([k, ls]) => [k, ls.map(l => decode(l).map(toW))])),
   };
 
   /* ---------- trips: geometry plus time anchors so each truck reaches a stop at its planned ETA ---------- */
   const trips = [];
   D.trucks.forEach((t, ti) => t.trips.forEach(tr => {
-    const pts = decode(tr.line).map(toM);
+    const pts = decode(tr.line).map(toW);
     const cum = new Float64Array(pts.length);
-    for (let k = 1; k < pts.length; k++) cum[k] = cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]);
+    for (let k = 1; k < pts.length; k++) cum[k] = cum[k - 1] + Math.hypot(pts[k][0] - pts[k - 1][0], pts[k][1] - pts[k - 1][1]) * M_PER_UNIT;
     const aT = [tr.start], aD = [0];
     let j = 0;
     tr.stops.forEach((s, k) => {
       let best = j, bd = Infinity;
       for (let q = j; q < pts.length; q++) {
-        const d = Math.hypot(pts[q][0] - stopX[s], pts[q][1] - stopY[s]);
+        const d = Math.hypot(pts[q][0] - stopX[s], pts[q][1] - stopY[s]) * M_PER_UNIT;
         if (d < bd) { bd = d; best = q; }
         if (d < 20) break;
       }
@@ -119,98 +120,165 @@
   servedIdx.sort((a, b) => S.eta[a] - S.eta[b]);
   const T_END = F.plan.last_back_min + 6;
 
-  /* ---------- hero map ---------- */
-  const card = $("#mapcard"), cv = $("#map"), ctx = cv.getContext("2d");
-  const baseCv = document.createElement("canvas"), bctx = baseCv.getContext("2d");
-  let W = 0, H = 0, dpr = 1, sc = 1, ox = 0, oy = 0, C = {};
+  /* ---------- hero map ----------
+     The street map is OpenStreetMap (OpenFreeMap vector tiles drawn by MapLibre), so streets, buildings and
+     names are Edinburgh's own at every zoom. Bins and trucks are drawn on a canvas above it in the same
+     projection. If the tiles can't load (offline, or inside a claude.ai artifact) a lighter vector map of the
+     same streets is drawn instead, and it pans and zooms the same way. */
+  const card = $("#mapcard"), cv = $("#map"), ctx = cv.getContext("2d"), baseCv = $("#mapBase"), bctx = baseCv.getContext("2d");
+  let W = 0, H = 0, dpr = 1, C = {}, gl = null;
+  const view = { x: .5, y: .5, z: 11 };                   // centre in world units, zoom (512-px tiles, as MapLibre)
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+  const dark = () => { const t = document.documentElement.dataset.theme; return t ? t === "dark" : matchMedia("(prefers-color-scheme: dark)").matches; };
   function readColours() {
-    C = { bg: css("--map-bg"), land: css("--map-land"), edge: css("--map-edge"), road: css("--map-road"), park: css("--map-park"),
-          water: css("--map-water"), full: css("--map-full"), done: css("--map-done"), wait: css("--map-wait"), truck: css("--map-truck"), ink: css("--map-ink"), ink2: css("--map-ink-2") };
+    C = {}; ["bg", "land", "edge", "road", "road-2", "park", "water", "full", "done", "wait", "truck", "truck-ring", "ink", "label", "building"]
+      .forEach(k => C[k] = css("--map-" + k));
   }
-  const P = (x, y) => [ox + x * sc, oy + y * sc];
+  const pad = () => W < 520 ? { top: 112, bottom: 78, left: 14, right: 14 } : { top: 70, bottom: 92, left: 24, right: 24 };
+  function fitView() {
+    const p = pad(), x0 = wx(box.w), x1 = wx(box.e), y0 = wy(box.n), y1 = wy(box.s);
+    const sx = (W - p.left - p.right) / (x1 - x0), sy = (H - p.top - p.bottom) / (y1 - y0);
+    const sc = Math.min(sx, sy);
+    view.z = Math.log2(sc / 512);
+    view.x = (x0 + x1) / 2 - (p.left - p.right) / 2 / sc;
+    view.y = (y0 + y1) / 2 - (p.top - p.bottom) / 2 / sc;
+  }
+  let SC = 1, OX = 0, OY = 0;                              // world → screen: x * SC + OX
+  function syncView() {
+    if (gl) { const c = gl.getCenter(); view.x = wx(c.lng); view.y = wy(c.lat); view.z = gl.getZoom(); }
+    SC = 512 * 2 ** view.z; OX = W / 2 - view.x * SC; OY = H / 2 - view.y * SC;
+  }
+  const P = (x, y) => [x * SC + OX, y * SC + OY];
+
+  // the fallback street map
+  function path(c, pts, close) {
+    for (let k = 0; k < pts.length; k++) { const x = pts[k][0] * SC + OX, y = pts[k][1] * SC + OY; k ? c.lineTo(x, y) : c.moveTo(x, y); }
+    if (close) c.closePath();
+  }
+  function drawBase() {
+    if (gl) return;
+    const c = bctx, z = view.z;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.fillStyle = C.water; c.fillRect(0, 0, W, H);                         // the Firth of Forth: everything outside the wards
+    c.beginPath(); base.wards.forEach(rings => rings.forEach(r => path(c, r, true))); c.fillStyle = C.land; c.fill("evenodd");
+    c.beginPath(); base.parks.forEach(r => path(c, r, true)); c.fillStyle = C.park; c.fill();
+    c.beginPath(); base.lakes.forEach(r => path(c, r, true)); c.fillStyle = C.water; c.fill();
+    c.lineJoin = c.lineCap = "round";
+    c.beginPath(); base.water.forEach(l => path(c, l, false)); c.strokeStyle = C.water; c.lineWidth = Math.max(1.4, (z - 10) * 1.2); c.stroke();
+    const w = k => Math.max(.5, k * 2 ** (z - 12));
+    const cls = [["local", C["road-2"], .9], ["minor", C.road, 1.3], ["major", C.road, 2.2]].filter(([k]) => (base.roads[k] || []).length);
+    cls.forEach(([k, , wd]) => { c.beginPath(); base.roads[k].forEach(l => path(c, l, false)); c.strokeStyle = C.edge; c.lineWidth = w(wd) + 1.4; c.stroke(); });   // casings first
+    cls.forEach(([k, col, wd]) => { c.beginPath(); base.roads[k].forEach(l => path(c, l, false)); c.strokeStyle = col; c.lineWidth = w(wd); c.stroke(); });
+    c.setLineDash([3, 3]);
+    c.beginPath(); base.wards.forEach(rings => rings.forEach(r => path(c, r, true))); c.strokeStyle = C.edge; c.lineWidth = 1; c.stroke();
+    c.setLineDash([]);
+  }
+
   function layout() {
     const r = card.getBoundingClientRect();
     dpr = Math.min(2, window.devicePixelRatio || 1);
     W = Math.max(1, r.width); H = Math.max(1, r.height);
     for (const c of [cv, baseCv]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
-    const top = W < 480 ? 104 : 62, bottom = W < 480 ? 70 : 78, side = 12;
-    const bw = ext.x1 - ext.x0, bh = ext.y1 - ext.y0;
-    sc = Math.min((W - 2 * side) / bw, (H - top - bottom) / bh);
-    ox = W / 2 - (ext.x0 + bw / 2) * sc;
-    oy = top + (H - top - bottom) / 2 - (ext.y0 + bh / 2) * sc;
-    drawBase();
+    if (!gl && !moved) fitView();
+    syncView(); drawBase();
   }
-  function path(c, pts, close) {
-    pts.forEach((p, k) => { const [x, y] = P(p[0], p[1]); k ? c.lineTo(x, y) : c.moveTo(x, y); });
-    if (close) c.closePath();
+
+  // the fallback map pans and zooms like the street map: drag, double-click, the +/− buttons, ctrl/⌘ + wheel
+  let moved = false;
+  function zoomAt(dz, sx = W / 2, sy = H / 2) {
+    if (gl) { gl.easeTo({ zoom: gl.getZoom() + dz, around: gl.unproject([sx, sy]), duration: 300 }); return; }
+    const z = Math.min(17, Math.max(9.5, view.z + dz)), k = 2 ** (z - view.z);
+    const wxp = (sx - OX) / SC, wyp = (sy - OY) / SC;
+    view.x = wxp - (wxp - view.x) / k; view.y = wyp - (wyp - view.y) / k; view.z = z;
+    moved = true; redraw();
   }
-  function drawBase() {
-    const c = bctx;
-    c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.fillStyle = C.bg; c.fillRect(0, 0, W, H);
-    c.beginPath(); base.wards.forEach(rings => rings.forEach(r => path(c, r, true)));
-    c.fillStyle = C.land; c.fill("evenodd");
-    c.beginPath(); base.parks.forEach(r => path(c, r, true)); c.fillStyle = C.park; c.fill();
-    c.lineJoin = c.lineCap = "round";
-    c.beginPath(); base.water.forEach(l => path(c, l, false)); c.strokeStyle = C.water; c.lineWidth = 1.6; c.stroke();
-    c.beginPath(); base.roads.forEach(l => path(c, l, false)); c.strokeStyle = C.road; c.lineWidth = .7; c.stroke();
-    c.beginPath(); base.wards.forEach(rings => rings.forEach(r => path(c, r, true))); c.strokeStyle = C.edge; c.lineWidth = .8; c.stroke();
+  function redraw() { syncView(); drawBase(); frame(T); }
+  {
+    let drag = null;
+    cv.addEventListener("pointerdown", e => { if (gl || e.button) return; drag = [e.clientX, e.clientY, view.x, view.y]; cv.setPointerCapture(e.pointerId); card.classList.add("grabbing"); });
+    cv.addEventListener("pointermove", e => {
+      if (!drag) return;
+      view.x = drag[2] - (e.clientX - drag[0]) / SC; view.y = drag[3] - (e.clientY - drag[1]) / SC; moved = true; redraw();
+    });
+    const up = () => { drag = null; card.classList.remove("grabbing"); };
+    cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+    cv.addEventListener("dblclick", e => { if (gl) return; const r = cv.getBoundingClientRect(); zoomAt(1, e.clientX - r.left, e.clientY - r.top); });
+    cv.addEventListener("wheel", e => {
+      if (gl || !(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault(); const r = cv.getBoundingClientRect(); zoomAt(-e.deltaY * .004, e.clientX - r.left, e.clientY - r.top);
+    }, { passive: false });
+    $("#mZoomIn").addEventListener("click", () => zoomAt(1));
+    $("#mZoomOut").addEventListener("click", () => zoomAt(-1));
+    $("#mReset").addEventListener("click", () => {
+      if (gl) { gl.fitBounds([[box.w, box.s], [box.e, box.n]], { padding: pad(), duration: 600 }); return; }
+      moved = false; fitView(); redraw();
+    });
   }
 
   let T = 0, playing = !reduce.matches, visible = true, last = 0, raf = 0, hold = 0;
-  const SPEED = T_END / 30;                       // a full shift in about 30 seconds
+  const SPEED = T_END / 32;                                // a full shift in about half a minute
   function frame(t) {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(baseCv, 0, 0);
+    ctx.clearRect(0, 0, cv.width, cv.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const r = W < 520 ? 1.15 : 1.35;
-    // stops: can wait, then forecast full, then emptied
+    const z = view.z, r = Math.min(7, Math.max(1.5, 1.6 + (z - 11.3) * 1.15)), ring = z > 13.2;
+    // stops: can wait, then forecast to be full, then emptied
     const groups = [[], [], []];
+    const m = 12;
     for (let i = 0; i < nStops; i++) {
-      if (S.truck[i] >= 0) groups[S.eta[i] <= t ? 2 : 1].push(i);
-      else groups[S.pred[i] >= 80 ? 1 : 0].push(i);
+      const g = S.truck[i] >= 0 ? (S.eta[i] <= t ? 2 : 1) : (S.pred[i] >= 80 ? 1 : 0);
+      groups[g].push(i);
     }
     [[C.wait, r * .85], [C.full, r * 1.1], [C.done, r]].forEach(([col, rad], g) => {
       ctx.beginPath();
-      for (const i of groups[g]) { const [x, y] = P(stopX[i], stopY[i]); ctx.moveTo(x + rad, y); ctx.arc(x, y, rad, 0, 6.2832); }
+      for (const i of groups[g]) {
+        const x = stopX[i] * SC + OX, y = stopY[i] * SC + OY;
+        if (x < -m || y < -m || x > W + m || y > H + m) continue;
+        ctx.moveTo(x + rad, y); ctx.arc(x, y, rad, 0, 6.2832);
+      }
       ctx.fillStyle = col; ctx.fill();
+      if (ring) { ctx.strokeStyle = C.bg; ctx.lineWidth = 1.2; ctx.stroke(); }
     });
     // a ring where a bin was just emptied
-    ctx.strokeStyle = C.done; ctx.lineWidth = 1;
+    ctx.strokeStyle = C.done; ctx.lineWidth = 1.2;
     for (const i of servedIdx) {
       const age = t - S.eta[i];
       if (age < 0) break;
       if (age > 7) continue;
       const [x, y] = P(stopX[i], stopY[i]);
-      ctx.globalAlpha = 1 - age / 7; ctx.beginPath(); ctx.arc(x, y, r + age * 1.1, 0, 6.2832); ctx.stroke();
+      ctx.globalAlpha = 1 - age / 7; ctx.beginPath(); ctx.arc(x, y, r + age * (1 + r * .3), 0, 6.2832); ctx.stroke();
     }
     ctx.globalAlpha = 1;
-    // trails and trucks
+    // the road each truck has driven so far, then the trucks
     let km = 0, active = 0;
     const heads = [];
     ctx.lineJoin = ctx.lineCap = "round";
-    ctx.strokeStyle = C.done; ctx.lineWidth = 1.1; ctx.globalAlpha = .28;
+    ctx.strokeStyle = C.done; ctx.lineWidth = Math.max(1.1, r * .7); ctx.globalAlpha = dark() ? .3 : .38;
     ctx.beginPath();
     for (const tr of trips) {
       if (t <= tr.start) continue;
       const d = tripDist(tr, t);
       km += tr.km * (tr.total ? d / tr.total : 1);
       const [hx, hy, k] = pointAt(tr, d);
-      let m = 0;
-      for (let q = 0; q <= k; q++) { const [x, y] = P(tr.pts[q][0], tr.pts[q][1]); m++ ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
+      for (let q = 0; q <= k; q++) { const x = tr.pts[q][0] * SC + OX, y = tr.pts[q][1] * SC + OY; q ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }
       const [x, y] = P(hx, hy); ctx.lineTo(x, y);
       if (t < tr.end) { active++; heads.push([x, y]); }
     }
     ctx.stroke(); ctx.globalAlpha = 1;
     // depot
-    const [dx, dy] = P(depot[0], depot[1]);
-    ctx.fillStyle = C.ink; ctx.fillRect(dx - 4, dy - 4, 8, 8);
-    ctx.strokeStyle = C.bg; ctx.lineWidth = 1.5; ctx.strokeRect(dx - 4, dy - 4, 8, 8);
+    const [dx, dy] = P(depot[0], depot[1]), ds = Math.max(4.5, r + 2);
+    ctx.fillStyle = C.ink; ctx.strokeStyle = C.bg; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.rect(dx - ds, dy - ds, ds * 2, ds * 2); ctx.fill(); ctx.stroke();
+    if (z > 11.6) {
+      ctx.font = `600 ${z > 13 ? 12.5 : 11.5}px ${getComputedStyle(document.body).fontFamily}`;
+      ctx.lineWidth = 3.5; ctx.strokeStyle = C.bg; ctx.strokeText("Seafield depot", dx + ds + 6, dy + 4);
+      ctx.fillStyle = C.ink; ctx.fillText("Seafield depot", dx + ds + 6, dy + 4);
+    }
+    const tr = Math.max(3, r * .9 + 2);
     for (const [x, y] of heads) {
-      ctx.beginPath(); ctx.arc(x, y, 5.5, 0, 6.2832); ctx.fillStyle = "rgba(255,255,255,.14)"; ctx.fill();
-      ctx.beginPath(); ctx.arc(x, y, 2.9, 0, 6.2832); ctx.fillStyle = C.truck; ctx.fill();
-      ctx.lineWidth = 1.2; ctx.strokeStyle = C.bg; ctx.stroke();
+      ctx.beginPath(); ctx.arc(x, y, tr + 3.5, 0, 6.2832); ctx.fillStyle = C["truck-ring"]; ctx.fill();
+      ctx.beginPath(); ctx.arc(x, y, tr, 0, 6.2832); ctx.fillStyle = C.truck; ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = C.bg; ctx.stroke();
     }
     $("#mClock").textContent = clock(Math.min(t, T_END));
     $("#mBins").textContent = int(groups[2].length);
@@ -223,27 +291,94 @@
     const dt = last ? Math.min(.1, (now - last) / 1000) : 0; last = now;
     if (T >= T_END) { hold += dt; if (hold > 2.6) { T = 0; hold = 0; } }
     else T = Math.min(T_END, T + dt * SPEED);
-    frame(T);
+    syncView(); frame(T);
     raf = requestAnimationFrame(tick);
   }
   function play(on) {
     playing = on;
     const b = $("#mPlay");
     b.textContent = on ? "Pause" : "Play";
-    b.setAttribute("aria-label", on ? "Pause the animation" : "Play the animation");
+    b.setAttribute("aria-label", on ? "Pause the replay" : "Play the replay");
     last = 0;
     if (on && !raf) raf = requestAnimationFrame(tick);
   }
   $("#mPlay").addEventListener("click", () => { if (!playing && T >= T_END) T = 0; play(!playing); });
   readColours(); layout();
-  window.BinSight = { show: t => { T = t; frame(t); }, play };   // handy for screenshots and testing
+  window.BinSight = { show: t => { T = t; syncView(); frame(t); }, play, view: () => ({ ...view, street: !!gl }), map: () => gl };   // handy for screenshots and testing
   if (reduce.matches) T = 300;                    // a still frame at 11:00 for reduced motion
   frame(T);
   play(playing);
   new ResizeObserver(() => { layout(); frame(T); }).observe(card);
-  new IntersectionObserver(es => { visible = es[0].isIntersecting && !document.hidden; if (visible && playing && !raf) { last = 0; raf = requestAnimationFrame(tick); } }).observe(card);
-  document.addEventListener("visibilitychange", () => { visible = !document.hidden; if (visible && playing && !raf) { last = 0; raf = requestAnimationFrame(tick); } });
-  const retheme = () => { readColours(); drawBase(); frame(T); };
+  const wake = () => { if (visible && playing && !raf) { last = 0; raf = requestAnimationFrame(tick); } };
+  new IntersectionObserver(es => { visible = es[0].isIntersecting && !document.hidden; wake(); }).observe(card);
+  document.addEventListener("visibilitychange", () => { visible = !document.hidden; wake(); });
+
+  /* the street map: OpenStreetMap vector tiles, recoloured to the page's light or dark palette */
+  const OFM_STYLE = "https://tiles.openfreemap.org/styles/positron";
+  const ML_JS = "https://cdnjs.cloudflare.com/ajax/libs/maplibre-gl/5.24.0/maplibre-gl.js";
+  const ML_CSS = "https://cdn.jsdelivr.net/npm/maplibre-gl@5.24.0/dist/maplibre-gl.css";
+  const loadScript = src => new Promise((ok, no) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = no; document.head.appendChild(s); });
+  let rawStyle = null;
+  function paletteStyle() {
+    const s = JSON.parse(JSON.stringify(rawStyle));
+    const paint = (l, k, v) => { (l.paint ||= {})[k] = v; };
+    for (const l of s.layers) {
+      const id = l.id;
+      if (l.type === "background") paint(l, "background-color", C.land);
+      else if (l.type === "fill") {
+        if (/water/.test(id)) paint(l, "fill-color", C.water);
+        else if (/park|wood|grass|landcover|cemetery|pitch/.test(id)) paint(l, "fill-color", C.park);
+        else if (/building/.test(id)) { paint(l, "fill-color", C.building); paint(l, "fill-outline-color", C.edge); }
+        else paint(l, "fill-color", C.land);
+        if (/residential|landuse/.test(id) && !/park|wood|grass/.test(id)) paint(l, "fill-opacity", .5);
+      } else if (l.type === "line") {
+        if (/water/.test(id)) paint(l, "line-color", C.water);
+        else if (/casing/.test(id)) paint(l, "line-color", C.edge);
+        else if (/rail/.test(id)) paint(l, "line-color", C.edge);
+        else if (/boundary/.test(id)) paint(l, "line-color", C.edge);
+        else if (/minor|path|service|track/.test(id)) paint(l, "line-color", C["road-2"]);
+        else paint(l, "line-color", C.road);
+      } else if (l.type === "symbol" && l.layout && l.layout["text-field"]) {
+        paint(l, "text-color", /water/.test(id) ? C.edge : C.label);
+        paint(l, "text-halo-color", C.land); paint(l, "text-halo-width", 1.3);
+      }
+    }
+    const name = ["coalesce", ["get", "name_en"], ["get", "name"]];
+    s.layers.push({ id: "bs-station", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 13.5, filter: ["==", ["get", "class"], "railway"],
+      layout: { "text-field": name, "text-font": ["Noto Sans Bold"], "text-size": 10.5, "text-anchor": "top", "text-offset": [0, .4] },
+      paint: { "text-color": C.label, "text-halo-color": C.land, "text-halo-width": 1.3 } });
+    s.layers.push({ id: "bs-housenumber", type: "symbol", source: "openmaptiles", "source-layer": "housenumber", minzoom: 17.2,
+      layout: { "text-field": ["get", "housenumber"], "text-font": ["Noto Sans Regular"], "text-size": 10 },
+      paint: { "text-color": C.label, "text-opacity": .6 } });
+    return s;
+  }
+  (async () => {
+    try {
+      const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 8000);
+      rawStyle = await fetch(OFM_STYLE, { signal: ctl.signal }).then(r => { if (!r.ok) throw new Error("style"); return r.json(); });
+      clearTimeout(tm);
+      const link = document.createElement("link"); link.rel = "stylesheet"; link.href = ML_CSS; document.head.appendChild(link);
+      if (!window.maplibregl) await loadScript(ML_JS);
+      if (!window.maplibregl) return;
+      const m = new maplibregl.Map({
+        container: "mapgl", style: paletteStyle(), bounds: [[box.w, box.s], [box.e, box.n]], fitBoundsOptions: { padding: pad() },
+        attributionControl: false, dragRotate: false, pitchWithRotate: false, touchPitch: false, keyboard: false,
+        cooperativeGestures: true, minZoom: 9.5, maxZoom: 18.5, fadeDuration: 0,
+      });
+      m.touchZoomRotate.disableRotation();
+      m.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }), "bottom-right");
+      let on = false;
+      const swap = () => {                                  // only once the first street tiles are drawn, so the map is never blank
+        if (on) return; on = true; gl = m;
+        card.classList.add("street"); baseCv.hidden = true;
+        m.on("move", () => { syncView(); if (!playing || !visible) frame(T); });
+        syncView(); frame(T);
+      };
+      m.once("idle", swap);
+      setTimeout(() => { if (!on && m.loaded()) swap(); }, 9000);
+    } catch (e) { /* keep the vector map */ }
+  })();
+  const retheme = () => { readColours(); drawBase(); if (gl && rawStyle) gl.setStyle(paletteStyle()); frame(T); };
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
   new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 
@@ -353,6 +488,214 @@
   });
   $$("#cLevel button").forEach(x => x.setAttribute("aria-pressed", x.classList.contains("on")));
   calc();
+
+  /* ---------- the sensor: a 3D model of the HC-SR04 module, to scale in millimetres ---------- */
+  const THREE_JS = "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js";
+  const stage = $("#stage");
+  let sensorStarted = false;
+  new IntersectionObserver((es, ob) => {
+    if (!es[0].isIntersecting || sensorStarted) return;
+    sensorStarted = true; ob.disconnect();
+    const go = () => { try { buildSensor(); } catch (e) { $("#stageFallback").hidden = false; } };
+    if (window.THREE) go();
+    else { const s = document.createElement("script"); s.src = THREE_JS; s.onload = go; s.onerror = () => { $("#stageFallback").hidden = false; }; document.head.appendChild(s); }
+  }, { rootMargin: "300px" }).observe(stage);
+
+  function buildSensor() {
+    const T3 = window.THREE, cvs = $("#sensor3d");
+    const renderer = new T3.WebGLRenderer({ canvas: cvs, antialias: true, alpha: true });
+    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    renderer.outputEncoding = T3.sRGBEncoding;
+    renderer.toneMapping = T3.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+    renderer.physicallyCorrectLights = true;
+    const scene = new T3.Scene();
+    const camera = new T3.PerspectiveCamera(28, 1, 1, 1000);
+    camera.position.set(0, 4, 118);
+
+    // a soft studio for the metal to reflect: a grey room with three light panels
+    const pm = new T3.PMREMGenerator(renderer);
+    const room = new T3.Scene();
+    room.add(new T3.Mesh(new T3.BoxGeometry(100, 100, 100), new T3.MeshBasicMaterial({ color: 0x6f7773, side: T3.BackSide })));
+    const panel = (w, h, x, y, z, ry, rx, k) => { const m = new T3.Mesh(new T3.PlaneGeometry(w, h), new T3.MeshBasicMaterial({ color: new T3.Color(k, k, k), side: T3.DoubleSide })); m.position.set(x, y, z); m.rotation.set(rx, ry, 0); room.add(m); };
+    panel(60, 20, 0, 45, 0, 0, Math.PI / 2, 5);
+    panel(30, 40, -48, 5, 10, Math.PI / 2, 0, 3);
+    panel(30, 40, 48, 0, 20, -Math.PI / 2, 0, 1.8);
+    panel(60, 30, 0, 0, 49, Math.PI, 0, 1.4);
+    scene.environment = pm.fromScene(room, .035).texture;
+    const key = new T3.DirectionalLight(0xffffff, 2.2); key.position.set(-30, 50, 80); scene.add(key);
+    scene.add(new T3.HemisphereLight(0xffffff, 0x8899aa, .6));
+
+    const tex = (w, h, draw) => { const c = document.createElement("canvas"); c.width = w; c.height = h; draw(c.getContext("2d"), w, h); const t = new T3.CanvasTexture(c); t.encoding = T3.sRGBEncoding; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); return t; };
+    const PX = 40;                                           // texture pixels per millimetre
+    const BLUE = "#1d4fa6", BLUE_D = "#173f87";
+    const hole = (g, x, y) => {                               // a plated mounting hole at board coordinates (mm, origin centre, y up)
+      const cx = (x + 22.5) * PX, cy = (10 - y) * PX;
+      g.fillStyle = "#d4b25a"; g.beginPath(); g.arc(cx, cy, 1.1 * PX, 0, 7); g.fill();
+      g.fillStyle = "#1b1d1f"; g.beginPath(); g.arc(cx, cy, .6 * PX, 0, 7); g.fill();
+    };
+    const traces = (g, seed) => {
+      g.strokeStyle = BLUE_D; g.lineWidth = .35 * PX; g.lineCap = "round"; g.lineJoin = "round";
+      let r = seed; const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647;
+      for (let k = 0; k < 22; k++) {
+        let x = rnd() * 45 * PX, y = rnd() * 20 * PX; g.beginPath(); g.moveTo(x, y);
+        for (let s = 0; s < 3; s++) { if (rnd() < .5) x += (rnd() - .5) * 14 * PX; else y += (rnd() - .5) * 8 * PX; g.lineTo(x, y); }
+        g.stroke();
+      }
+    };
+    const front = tex(45 * PX, 20 * PX, (g, w, h) => {
+      const gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, "#2257b1"); gr.addColorStop(1, BLUE); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+      traces(g, 7);
+      [[-21, 8.5], [21, 8.5], [-21, -8.5], [21, -8.5]].forEach(([x, y]) => hole(g, x, y));
+      g.fillStyle = "#f4f6f8"; g.textAlign = "center"; g.textBaseline = "middle";
+      g.font = `700 ${2.1 * PX}px Arial, sans-serif`; g.fillText("HC-SR04", 22.5 * PX, 3.2 * PX);
+      g.font = `700 ${1.6 * PX}px Arial, sans-serif`; g.fillText("T", 3.2 * PX, 18.2 * PX); g.fillText("R", 41.8 * PX, 18.2 * PX);
+      g.save(); g.translate(22.5 * PX, 14.8 * PX); g.font = `600 ${1.05 * PX}px Arial, sans-serif`;
+      ["Vcc", "Trig", "Echo", "Gnd"].forEach((t, k) => { g.save(); g.translate((k - 1.5) * 2.54 * PX, 0); g.rotate(-Math.PI / 2); g.fillText(t, 0, 0); g.restore(); });
+      g.restore();
+      // solder pads for the four header pins
+      for (let k = 0; k < 4; k++) { g.fillStyle = "#cfd3d6"; g.beginPath(); g.arc((22.5 + (k - 1.5) * 2.54) * PX, 18.6 * PX, .75 * PX, 0, 7); g.fill(); }
+    });
+    const back = tex(45 * PX, 20 * PX, (g, w, h) => {
+      g.fillStyle = BLUE; g.fillRect(0, 0, w, h); traces(g, 19);
+      [[-21, 8.5], [21, 8.5], [-21, -8.5], [21, -8.5]].forEach(([x, y]) => hole(g, -x, y));
+      g.fillStyle = "#f4f6f8"; g.textAlign = "center"; g.font = `600 ${1.2 * PX}px Arial, sans-serif`; g.fillText("BinSight firmware", 22.5 * PX, 18.6 * PX);
+    });
+    const edge = new T3.MeshStandardMaterial({ color: 0x1a4796, roughness: .6 });
+    const pcb = new T3.Mesh(new T3.BoxGeometry(45, 20, 1.6), [edge, edge, edge, edge,
+      new T3.MeshStandardMaterial({ map: front, roughness: .48, metalness: .05 }), new T3.MeshStandardMaterial({ map: back, roughness: .5 })]);
+    const board = new T3.Group(); board.add(pcb);
+
+    const metal = new T3.MeshStandardMaterial({ color: 0xdfe3e7, metalness: 1, roughness: .26 });
+    const plastic = new T3.MeshStandardMaterial({ color: 0x1b1d1f, roughness: .55 });
+    const mesh = tex(512, 512, (g, w, h) => {
+      g.fillStyle = "#1d1f22"; g.fillRect(0, 0, w, h);
+      g.strokeStyle = "rgba(205,210,215,.55)"; g.lineWidth = 2.2;
+      for (let k = -w; k < 2 * w; k += 11) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k + h, h); g.stroke(); g.beginPath(); g.moveTo(k + h, 0); g.lineTo(k, h); g.stroke(); }
+      const v = g.createRadialGradient(w / 2, h / 2, w * .2, w / 2, h / 2, w * .5); v.addColorStop(0, "rgba(0,0,0,0)"); v.addColorStop(1, "rgba(0,0,0,.55)"); g.fillStyle = v; g.fillRect(0, 0, w, h);
+    });
+    const grille = new T3.MeshStandardMaterial({ map: mesh, metalness: .6, roughness: .45 });
+    const cyl = (r, h, mat, open) => { const m = new T3.Mesh(new T3.CylinderGeometry(r, r, h, 72, 1, open), mat); m.rotation.x = Math.PI / 2; return m; };
+    const can = x => {
+      const g = new T3.Group(); g.position.set(x, 1, .8);
+      const foot = cyl(8.25, 1, plastic); foot.position.z = .5; g.add(foot);
+      const body = cyl(8, 11.6, metal, true); body.position.z = 1 + 5.8; g.add(body);
+      const lip = new T3.Mesh(new T3.TorusGeometry(7.65, .42, 16, 72), metal); lip.position.z = 12.55; g.add(lip);
+      const face = new T3.Mesh(new T3.CircleGeometry(7.5, 72), grille); face.position.z = 12.1; g.add(face);
+      const inner = new T3.Mesh(new T3.RingGeometry(7.2, 7.6, 72), new T3.MeshStandardMaterial({ color: 0x0e0f10, roughness: .8 })); inner.position.z = 12.15; g.add(inner);
+      board.add(g);
+    };
+    can(-13); can(13);
+    // the crystal oscillator (HC-49/S): a rounded metal can lying between the transducers
+    const xs = new T3.Shape(), L = 5.5, Rr = 2.3;
+    xs.moveTo(-L + Rr, -Rr); xs.lineTo(L - Rr, -Rr); xs.absarc(L - Rr, 0, Rr, -Math.PI / 2, Math.PI / 2, false); xs.lineTo(-L + Rr, Rr); xs.absarc(-L + Rr, 0, Rr, Math.PI / 2, Math.PI * 1.5, false);
+    const xtal = new T3.Mesh(new T3.ExtrudeGeometry(xs, { depth: 3, bevelEnabled: true, bevelSize: .35, bevelThickness: .35, bevelSegments: 4, curveSegments: 24 }), metal);
+    xtal.position.set(0, 6.4, .8 + .35); board.add(xtal);
+    // the four header pins and their plastic spacer, sticking out of the bottom edge
+    const spacer = new T3.Mesh(new T3.BoxGeometry(10.16, 2.5, 2.5), plastic); spacer.position.set(0, -11.25, 0); board.add(spacer);
+    const pinMat = new T3.MeshStandardMaterial({ color: 0xd8c27a, metalness: 1, roughness: .3 });
+    for (let k = 0; k < 4; k++) { const p = new T3.Mesh(new T3.BoxGeometry(.64, 8.6, .64), pinMat); p.position.set((k - 1.5) * 2.54, -13.6, 0); board.add(p); }
+    // chips on the back
+    [[-9, 2, 6, 4], [3, 2, 6, 4], [12.5, -3, 4.5, 4]].forEach(([x, y, w, h]) => {
+      const c = new T3.Mesh(new T3.BoxGeometry(w, h, 1.5), plastic); c.position.set(x, y, -.8 - .75); board.add(c);
+      for (let k = 0; k < Math.round(w / 1.27); k++) [-1, 1].forEach(s => { const l = new T3.Mesh(new T3.BoxGeometry(.4, .9, .3), metal); l.position.set(x - w / 2 + .6 + k * 1.27, y + s * (h / 2 + .35), -.95); board.add(l); });
+    });
+    const pivot = new T3.Group(); pivot.add(board); board.position.set(0, 1.5, -6); scene.add(pivot);
+    // a soft contact shadow on the floor
+    const shTex = tex(256, 256, (g, w, h) => { const r = g.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w / 2); r.addColorStop(0, "rgba(0,0,0,.32)"); r.addColorStop(1, "rgba(0,0,0,0)"); g.fillStyle = r; g.fillRect(0, 0, w, h); });
+    shTex.encoding = T3.LinearEncoding;
+    const shadow = new T3.Mesh(new T3.PlaneGeometry(70, 26), new T3.MeshBasicMaterial({ map: shTex, transparent: true, depthWrite: false }));
+    shadow.rotation.x = -Math.PI / 2; shadow.position.y = -24; scene.add(shadow);
+
+    // hotspots follow points on the model
+    const spots = { t: new T3.Vector3(-21, 1, 9), r: new T3.Vector3(21, 1, 9), x: new T3.Vector3(2.5, 8.6, 3.5), p: new T3.Vector3(0, -17.8, 0) };
+    const spotEls = $$(".hs");
+    const nrm = new T3.Vector3(), tmp = new T3.Vector3(), camDir = new T3.Vector3();
+
+    // turning: drag to spin, it settles back into a gentle sway
+    let yaw = -.55, pitch = .32, vy = 0, vp = 0, drag = null, idle = 0, t0 = performance.now(), dirty = true;
+    const still = reduce.matches;
+    cvs.addEventListener("pointerdown", e => { drag = [e.clientX, e.clientY]; cvs.setPointerCapture(e.pointerId); stage.classList.add("grabbing"); $("#stageHint").style.opacity = 0; });
+    cvs.addEventListener("pointermove", e => {
+      if (!drag) return;
+      const dx = e.clientX - drag[0], dy = e.clientY - drag[1]; drag = [e.clientX, e.clientY];
+      vy = dx * .012; vp = dy * .008; yaw += vy; pitch = Math.max(-.9, Math.min(1.1, pitch + vp)); idle = 0; dirty = true;
+    });
+    const up = () => { drag = null; stage.classList.remove("grabbing"); };
+    cvs.addEventListener("pointerup", up); cvs.addEventListener("pointercancel", up);
+
+    let W3 = 0, H3 = 0;
+    const size = () => {
+      const r = stage.getBoundingClientRect(); W3 = r.width; H3 = r.height;
+      renderer.setSize(W3, H3, false); camera.aspect = W3 / H3;
+      camera.position.z = W3 / H3 < .9 ? 185 : 140;                // phones: step back a little
+      camera.updateProjectionMatrix(); dirty = true;
+    };
+    new ResizeObserver(size).observe(stage); size();
+    let onScreen = true;
+    new IntersectionObserver(es => { onScreen = es[0].isIntersecting; if (onScreen) loop(); }).observe(stage);
+    let running = false;
+    function loop() {
+      if (running) return; running = true;
+      const step = now => {
+        if (!onScreen) { running = false; return; }
+        const dt = Math.min(.05, (now - t0) / 1000); t0 = now; idle += dt;
+        if (!drag) {
+          yaw += vy; pitch = Math.max(-.9, Math.min(1.1, pitch + vp)); vy *= .94; vp *= .9;
+          if (!still && idle > 2.5) { yaw += (-.55 + Math.sin(now / 2600) * .45 - yaw) * .012; pitch += (.32 - pitch) * .015; }
+          if (Math.abs(vy) > 1e-4 || Math.abs(vp) > 1e-4 || (!still && idle > 2.5)) dirty = true;
+        }
+        if (dirty) {
+          pivot.rotation.set(pitch, yaw, 0); pivot.position.y = still ? 0 : Math.sin(now / 1800) * .6;
+          renderer.render(scene, camera);
+          pivot.updateMatrixWorld();
+          nrm.set(0, 0, 1).transformDirection(board.matrixWorld);
+          camera.getWorldDirection(camDir);
+          const facing = -nrm.dot(camDir);
+          spotEls.forEach(el => {
+            const k = el.dataset.hs;
+            tmp.copy(spots[k]).applyMatrix4(board.matrixWorld).project(camera);
+            const x = (tmp.x + 1) / 2 * W3, y = (1 - tmp.y) / 2 * H3;
+            const show = k === "p" ? 1 : Math.max(0, Math.min(1, (facing - .25) * 3));
+            el.style.opacity = W3 < 380 && k === "x" ? 0 : show;
+            const right = k === "r" || k === "x" ? true : k === "t" ? false : x > W3 * .5;
+            el.style.transform = `translate(${right ? x - 5 : x - el.offsetWidth + 5}px, ${y - el.offsetHeight / 2}px)`;
+            el.style.flexDirection = right ? "row" : "row-reverse";
+            el.style.padding = right ? "5px 11px 5px 6px" : "5px 6px 5px 11px";
+          });
+          dirty = still ? false : dirty;
+        }
+        requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    }
+    loop();
+  }
+
+  /* ---------- how the sensor measures: time the echo, get the distance, get the fill ---------- */
+  {
+    const DEPTH = 1.2, LID = 66, FLOOR = 262, SOUND = 343;     // an example bin 1.2 m deep, drawn from y=66 (sensor) to y=262 (floor)
+    const fillIn = $("#eFill");
+    const upd = () => {
+      const f = +fillIn.value / 100;
+      const dist = Math.max(.02, DEPTH * (1 - f));
+      const top = LID + (FLOOR - LID) * (dist / DEPTH);
+      $("#oFill").textContent = Math.round(f * 100) + "%";
+      $("#eTime").textContent = (2 * dist / SOUND * 1000).toFixed(1) + " ms";
+      $("#eDist").textContent = dist.toFixed(2) + " m";
+      $("#ePct").textContent = Math.round((1 - dist / DEPTH) * 100) + "%";
+      const w = $("#echoWaste"); w.setAttribute("y", top); w.setAttribute("height", FLOOR + 10 - top);
+      $("#echoTop").setAttribute("d", `M40 ${top + 2} q 20 -7 40 -2 t 40 -1 t 40 -3 t 40 2 V ${top + 6} H 40 z`);
+      $("#echoLine").setAttribute("y2", top - 2);
+      $("#echoArrA").setAttribute("d", `M206 72 l4 -6 l4 6 z`);
+      $("#echoArrB").setAttribute("d", `M206 ${top - 8} l4 6 l4 -6 z`);
+      const span = top - LID - 4, n = Math.max(1, Math.min(4, Math.floor(span / 26)));
+      $("#echoWaves").innerHTML = Array.from({ length: n }, (_, k) => {
+        const y = LID + 10 + (span - 12) * (k + .5) / n, half = 10 + (y - LID) * .27;
+        return `<path d="M${120 - half} ${y} Q 120 ${y + 9} ${120 + half} ${y}" style="animation-delay:${(k * .35).toFixed(2)}s"/>`;
+      }).join("");
+    };
+    fillIn.addEventListener("input", upd); upd();
+  }
 
   /* ---------- pilot form (demo: nothing is sent) ---------- */
   $("#pilotForm").addEventListener("submit", e => {

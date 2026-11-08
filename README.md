@@ -11,7 +11,7 @@ The research site explains *how the model works*. This site explains *what a cus
 | Plan | Who | Price | Why it wins |
 |---|---|---|---|
 | **Free pilot** | Councils | £0 for 90 days, up to 300 bin stops | 4 weeks in shadow mode, 9 live against matched control areas. The council keeps the report either way. |
-| **Savings Share** | Councils | 25 % of *verified* savings, £0 upfront | No saving, no fee. Uses existing sensors (Edinburgh already has about 11,000) or we fit ours free. **Overflow guarantee:** £60 credit per overflow above the pilot baseline. |
+| **Savings Share** | Councils | 25 % of *verified* savings, £0 upfront | No saving, no fee. A **free BinSight sensor for every bin**: put it under the lid and it reports. Existing sensors can be read too. **Overflow guarantee:** £60 credit per overflow above the pilot baseline. |
 | **Spare Shift** | Councils | 15 % of bookings | Truck time freed by better routes (65 truck-hours a day in the Edinburgh simulation) becomes bookable bulky uplifts, trade waste and event clean-ups. The council keeps 85 %. Hours sold are never also billed as savings. |
 | **BinSight Estates** | Housing associations, universities, hotels | £4 per bin a month, sensor included | The contractor is called only when a bin is nearly full. |
 | **Resident app** | Residents | Free | "Is my bin being emptied tomorrow?" plus two-tap problem reports that feed the next night's plan. |
@@ -32,12 +32,19 @@ All prices are our proposal for the demo.
 
 The savings calculator scales the simulation per bin stop (£494 a year per stop at £1.45/km, £75/truck-hour, £60/overflow). It defaults to counting half of that, as a cautious planning case.
 
+## The sensor
+
+Every plan includes a BinSight sensor for each bin, free: customers put it under the lid and they are done. It is built on the HC-SR04 ultrasonic ranging module, which costs £2.00 retail ([The Pi Hut](https://thepihut.com/products/ultrasonic-distance-sensor-hcsr04)), with the BinSight system running on it.
+
+The page shows it as an interactive 3D model, built to scale (45 × 20 mm board, two 16 mm transducers, crystal, four header pins) with three.js. A small demo shows how an echo time becomes a fill reading (sound at 343 m/s, in an example bin 1.2 m deep).
+
 ## Page sections
 
-- **Hero:** the map replays tomorrow's real routes from 06:00 to 14:00.
+- **Hero:** a real Edinburgh street map (OpenStreetMap vector tiles from OpenFreeMap, drawn with MapLibre) with every bin stop and tomorrow's 34 truck routes replayed on top in the same projection, from 06:00 to 14:00. You can pan and zoom down to street level. Where the tiles can't load (inside a claude.ai artifact, or offline), a vector map of the same streets is drawn instead.
 - **Proof strip and the problem:** sourced facts.
 - **How it works.**
 - **Product:** three screens built from the real plan: the control room, the driver run sheet and the resident app.
+- **The sensor:** a 3D model and an echo demo.
 - **Street lookup:** for residents.
 - **Pricing.**
 - **Savings calculator.**
@@ -47,7 +54,7 @@ The savings calculator scales the simulation per bin stop (£494 a year per stop
 
 ## Build
 
-The page is one self-contained HTML file with no frameworks. Fonts come from Google Fonts.
+The page is one HTML file with its data inlined. It loads Google Fonts, MapLibre and three.js from CDNs; the street map comes from OpenFreeMap.
 
 ```bash
 python3 scripts/make_data.py ../binsight-edinburgh   # optional: refresh data/demo.json from the research repo
