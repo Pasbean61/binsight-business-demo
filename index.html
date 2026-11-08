@@ -549,7 +549,7 @@ ol.fit span { color: var(--ink-2); font-size: 15px; }
       <div class="map-tools">
         <form id="mLocate"><label for="mSearch">Explore Edinburgh</label><div class="map-search-row"><input id="mSearch" list="mPlaces" placeholder="Street or neighbourhood" autocomplete="off"><datalist id="mPlaces"></datalist><button type="submit">Go</button></div></form>
         <label>Follow a truck<select id="mFollow"><option value="-1">All trucks</option></select></label>
-        <label>Replay speed<select id="mSpeed"><option value="1">1×</option><option value="3">3×</option><option value="10">10×</option></select></label>
+        <label>Replay speed<select id="mSpeed"><option value="1">1×</option><option value="3">3×</option><option value="5">5×</option><option value="10">10×</option></select></label>
         <div class="map-layers"><label><input type="checkbox" id="mShowBins" checked> Bin stops</label><label><input type="checkbox" id="mShowRoutes" checked> Routes</label></div>
         <button id="mExpand" type="button">Full screen</button>
       </div>
@@ -586,7 +586,7 @@ ol.fit span { color: var(--ink-2); font-size: 15px; }
           <div><b id="mKm">0</b><span>km driven</span></div>
         </div>
       </div>
-      <figcaption class="map-caption"><span class="tag real">Real</span> Edinburgh streets, buildings and place names from OpenStreetMap, with <span data-f="stops">4,532</span> council bin stops at their geographic coordinates. <span class="tag sim">Simulated</span> fill levels and collection routes. Scroll or pinch to street level, drag to explore, and click a bin for its plan.</figcaption>
+      <figcaption class="map-caption"><span class="tag real">Real</span> Edinburgh streets, buildings and place names from OpenStreetMap, with <span data-f="stops">4,532</span> council bin stops at their geographic coordinates. <span class="tag sim">Simulated</span> fill levels and collection routes. Nearby stops are grouped into numbered circles. Click a group or zoom in to see individual bins; click a bin for its plan.</figcaption>
     </figure>
   </div>
 </section>
@@ -1360,15 +1360,22 @@ ol.fit span { color: var(--ink-2); font-size: 15px; }
     if (m.getSource("bs-stops")) return;
     const features = [];
     for (let i = 0; i < nStops; i++) features.push({ type: "Feature", id: i, geometry: { type: "Point", coordinates: [S.lon[i], S.lat[i]] }, properties: { c: S.truck[i] >= 0 || S.pred[i] >= 80 ? 1 : 0, pred: S.pred[i] } });
-    m.addSource("bs-stops", { type: "geojson", data: { type: "FeatureCollection", features } });
+    m.addSource("bs-stops", { type: "geojson", cluster: true, clusterRadius: 32, clusterMaxZoom: 13, data: { type: "FeatureCollection", features } });
     const before = (m.getStyle().layers.find(l => l.type === "symbol") || {}).id;
+    // Aggregate nearby stops in the city overview; individual stops appear as you zoom in.
+    m.addLayer({ id: "bs-clusters", type: "circle", source: "bs-stops", filter: ["has", "point_count"], paint: {
+      "circle-color": "#e5f2ec", "circle-radius": ["step", ["get", "point_count"], 13, 100, 17, 500, 21],
+      "circle-stroke-color": "#268c78", "circle-stroke-width": 1.5, "circle-opacity": .95 } }, before);
+    m.addLayer({ id: "bs-cluster-count", type: "symbol", source: "bs-stops", filter: ["has", "point_count"], layout: {
+      "text-field": ["get", "point_count_abbreviated"], "text-font": ["Noto Sans Regular"], "text-size": 11,
+      "text-allow-overlap": true }, paint: { "text-color": "#165c4d" } }, before);
     const big = ["==", ["get", "c"], 1];
-    m.addLayer({ id: "bs-stops", type: "circle", source: "bs-stops", layout: { "circle-sort-key": ["get", "c"] }, paint: {
+    m.addLayer({ id: "bs-stops", type: "circle", source: "bs-stops", filter: ["!", ["has", "point_count"]], layout: { "circle-sort-key": ["get", "c"] }, paint: {
       "circle-color": ["case", ["boolean", ["feature-state", "done"], false], C.done, ["step", ["get", "pred"], "#c7d8d0", 35, "#8fbda8", 60, "#e6bd56", 80, "#e28740", 90, "#c84630"]],
-      "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, ["case", big, 1.9, 1.4], 12, ["case", big, 3, 2.2], 14, 4.6, 16, 7, 18, 9.5],
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, ["case", big, 1.9, 1.4], 12, ["case", big, 3, 2.2], 14, 3, 16, 4.5, 18, 6],
       "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 12.5, 0, 13.5, 1.4],
       "circle-stroke-color": C.bg } }, before);
-    m.setLayoutProperty("bs-stops", "visibility", showBins ? "visible" : "none");
+    ["bs-stops", "bs-clusters", "bs-cluster-count"].forEach(id => m.setLayoutProperty(id, "visibility", showBins ? "visible" : "none"));
     doneNow.fill(0); syncStops(T);
   }
   function syncStops(t) {
@@ -1420,7 +1427,7 @@ ol.fit span { color: var(--ink-2); font-size: 15px; }
     for (const i of showBins ? servedIdx : []) {
       const age = t - S.eta[i];
       if (age < 0) break;
-      if (age > 7) continue;
+      if (age > 7 || z < 14) continue;
       const [x, y] = P(stopX[i], stopY[i]);
       ctx.globalAlpha = 1 - age / 7; ctx.beginPath(); ctx.arc(x, y, r + age * (1 + r * .3), 0, 6.2832); ctx.stroke();
     }
@@ -1532,7 +1539,7 @@ ol.fit span { color: var(--ink-2); font-size: 15px; }
   }
   $("#mFollow").addEventListener("change", e => { followTruck = +e.target.value; if (followTruck >= 0) { if (gl) gl.setZoom(14.5); else view.z = 14.5; followPosition(); } frame(T); });
   $("#mSpeed").addEventListener("change", e => { speed = +e.target.value; });
-  $("#mShowBins").addEventListener("change", e => { showBins = e.target.checked; hideTip(); if (gl?.getLayer("bs-stops")) gl.setLayoutProperty("bs-stops", "visibility", showBins ? "visible" : "none"); frame(T); });
+  $("#mShowBins").addEventListener("change", e => { showBins = e.target.checked; hideTip(); if (gl?.getLayer("bs-stops")) ["bs-stops", "bs-clusters", "bs-cluster-count"].forEach(id => gl.setLayoutProperty(id, "visibility", showBins ? "visible" : "none")); frame(T); });
   $("#mShowRoutes").addEventListener("change", e => { showRoutes = e.target.checked; frame(T); });
   $("#mReset").addEventListener("click", stopFollowing);
   cv.addEventListener("pointerdown", stopFollowing);
@@ -1640,6 +1647,16 @@ ol.fit span { color: var(--ink-2); font-size: 15px; }
         m.on("mousemove", "bs-stops", e => { const f = e.features[0]; m.getCanvas().style.cursor = "pointer"; showTip(f.id, e.point.x, e.point.y); });
         m.on("mouseleave", "bs-stops", () => { m.getCanvas().style.cursor = ""; hideTip(); });
         m.on("click", "bs-stops", e => showTip(e.features[0].id, e.point.x, e.point.y));
+        m.on("mouseenter", "bs-clusters", () => { m.getCanvas().style.cursor = "pointer"; });
+        m.on("mouseleave", "bs-clusters", () => { m.getCanvas().style.cursor = ""; });
+        m.on("click", "bs-clusters", async e => {
+          const f = e.features[0];
+          try {
+            const zoom = await m.getSource("bs-stops").getClusterExpansionZoom(f.properties.cluster_id);
+            stopFollowing();
+            m.easeTo({ center: f.geometry.coordinates, zoom, duration: reduce.matches ? 0 : 500 });
+          } catch { /* A cluster can disappear while the map is changing. */ }
+        });
         m.on("movestart", hideTip);
         syncView(); frame(T);
       };
