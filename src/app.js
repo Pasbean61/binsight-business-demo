@@ -65,9 +65,9 @@
   const wy = la => { const s = Math.sin(la * R2D); return .5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI); };
   const toW = ([la, lo]) => [wx(lo), wy(la)];
   const M_PER_UNIT = 40075016.686 * Math.cos(55.95 * R2D);           // metres per world unit around Edinburgh
-  // frame the map on where the bins are: the 1st to 99th percentile of stops, so a few outlying villages don't shrink the city
+  // open the map on where most bins are (5th to 95th percentile), close enough to read the neighbourhood names
   const quant = (a, p) => { const s = a.slice().sort((x, y) => x - y); return s[Math.floor(p * (s.length - 1))]; };
-  const box = { s: quant(S.lat, .01), n: quant(S.lat, .99), w: quant(S.lon, .01), e: quant(S.lon, .99) };
+  const box = { s: quant(S.lat, .05), n: quant(S.lat, .95), w: quant(S.lon, .05), e: quant(S.lon, .95) };
 
   const stopX = Float64Array.from(S.lon, wx), stopY = Float64Array.from(S.lat, wy);
   const depot = [wx(D.depot.longitude), wy(D.depot.latitude)];
@@ -79,6 +79,13 @@
     water: B.water.map(l => decode(l).map(toW)),
     roads: Object.fromEntries(Object.entries(B.roads).map(([k, ls]) => [k, ls.map(l => decode(l).map(toW))])),
   };
+
+  // street and place names for the fallback map (OpenStreetMap), in drawing priority order
+  const LB = B.labels || { street_names: [], streets: [], places: [] };
+  const lStreets = LB.streets.map(([n, la, lo, a, rk, len]) => ({ n: LB.street_names[n], x: wx(lo / 1e5 - 3), y: wy(la / 1e5 + 55), a: a * R2D, rk, len, s: 1 }));
+  const lPlaces = LB.places.map(([n, la, lo, rk]) => ({ n: rk ? n.toUpperCase() : n, x: wx(lo), y: wy(la), rk, s: 0 }));
+  const byRank = (arr, k) => arr.filter(l => l.rk === k);
+  const labelOrder = [byRank(lPlaces, 0), byRank(lPlaces, 1), byRank(lStreets, 0), byRank(lPlaces, 2), byRank(lStreets, 1), byRank(lStreets, 2), byRank(lPlaces, 3), byRank(lStreets, 3)].flat();
 
   /* ---------- trips: geometry plus time anchors so each truck reaches a stop at its planned ETA ---------- */
   const trips = [];
@@ -126,6 +133,8 @@
      projection. If the tiles can't load (offline, or inside a claude.ai artifact) a lighter vector map of the
      same streets is drawn instead, and it pans and zooms the same way. */
   const card = $("#mapcard"), cv = $("#map"), ctx = cv.getContext("2d"), baseCv = $("#mapBase"), bctx = baseCv.getContext("2d");
+  const lblCv = document.createElement("canvas"); lblCv.className = "map-labels"; lblCv.setAttribute("aria-hidden", "true"); cv.after(lblCv);
+  const lctx = lblCv.getContext("2d");
   let W = 0, H = 0, dpr = 1, C = {}, gl = null;
   const view = { x: .5, y: .5, z: 11 };                   // centre in world units, zoom (512-px tiles, as MapLibre)
   const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
@@ -172,13 +181,46 @@
     c.setLineDash([3, 3]);
     c.beginPath(); base.wards.forEach(rings => rings.forEach(r => path(c, r, true))); c.strokeStyle = C.edge; c.lineWidth = 1; c.stroke();
     c.setLineDash([]);
+    drawLabels();
+  }
+  // names on the fallback map: places from the city zoom, street names as you zoom in, never overlapping
+  const widths = new Map();
+  function drawLabels() {
+    const c = lctx;
+    c.setTransform(1, 0, 0, 1, 0, 0); c.clearRect(0, 0, lblCv.width, lblCv.height);
+    if (gl) return;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const z = view.z, fam = getComputedStyle(document.body).fontFamily, ppm = SC / M_PER_UNIT, boxes = [];
+    const PMIN = [9.6, 11.2, 12.7, 14.2], SMIN = [12.3, 13, 13.6, 14.5];
+    const font = l => l.s ? `${l.rk < 2 ? 600 : 500} ${z > 15 ? 12.5 : 11}px ${fam}`
+      : l.rk === 0 ? `680 ${z > 12 ? 15 : 13}px ${fam}` : `650 ${l.rk === 1 ? (z > 13 ? 12.5 : 11) : 10.5}px ${fam}`;
+    const width = (f, t) => { const k = f + t; let w = widths.get(k); if (w == null) { c.font = f; w = c.measureText(t).width; widths.set(k, w); } return w; };
+    c.textAlign = "center"; c.textBaseline = "middle"; c.lineJoin = "round";
+    let n = 0;
+    for (const l of labelOrder) {
+      if (z < (l.s ? SMIN : PMIN)[l.rk]) continue;
+      const x = l.x * SC + OX, y = l.y * SC + OY;
+      if (x < -80 || y < -20 || x > W + 80 || y > H + 20) continue;
+      const f = font(l), tw = width(f, l.n) + (l.s ? 0 : l.n.length * (l.rk ? 1.1 : 0)), th = l.s ? 13 : 16;
+      if (l.s && tw > l.len * ppm * .95) continue;                       // the name must fit along its street
+      const ca = Math.abs(Math.cos(l.a || 0)), sa = Math.abs(Math.sin(l.a || 0));
+      const hw = (tw * ca + th * sa) / 2 + 3, hh = (tw * sa + th * ca) / 2 + 2;
+      if (boxes.some(b => x - hw < b[2] && x + hw > b[0] && y - hh < b[3] && y + hh > b[1])) continue;
+      boxes.push([x - hw, y - hh, x + hw, y + hh]);
+      c.save(); c.translate(x, y); if (l.a) c.rotate(l.a);
+      c.font = f; if ("letterSpacing" in c) c.letterSpacing = !l.s && l.rk ? "1.1px" : "0px";
+      c.lineWidth = 3.2; c.strokeStyle = C.land; c.strokeText(l.n, 0, 0);
+      c.fillStyle = l.s ? C.label : C.ink; c.globalAlpha = l.s ? .85 : (l.rk ? .72 : .9); c.fillText(l.n, 0, 0);
+      c.restore();
+      if (++n > 260) break;
+    }
   }
 
   function layout() {
     const r = card.getBoundingClientRect();
     dpr = Math.min(2, window.devicePixelRatio || 1);
     W = Math.max(1, r.width); H = Math.max(1, r.height);
-    for (const c of [cv, baseCv]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+    for (const c of [cv, baseCv, lblCv]) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
     if (!gl && !moved) fitView();
     syncView(); drawBase();
   }
@@ -215,6 +257,30 @@
     });
   }
 
+  // on the street map, bin stops are a map layer under the street and place names, so the names stay readable
+  const doneNow = new Uint8Array(nStops);
+  function addStops(m) {
+    if (m.getSource("bs-stops")) return;
+    const features = [];
+    for (let i = 0; i < nStops; i++) features.push({ type: "Feature", id: i, geometry: { type: "Point", coordinates: [S.lon[i], S.lat[i]] }, properties: { c: S.truck[i] >= 0 || S.pred[i] >= 80 ? 1 : 0 } });
+    m.addSource("bs-stops", { type: "geojson", data: { type: "FeatureCollection", features } });
+    const before = (m.getStyle().layers.find(l => l.type === "symbol") || {}).id;
+    const big = ["==", ["get", "c"], 1];
+    m.addLayer({ id: "bs-stops", type: "circle", source: "bs-stops", layout: { "circle-sort-key": ["get", "c"] }, paint: {
+      "circle-color": ["case", ["boolean", ["feature-state", "done"], false], C.done, big, C.full, C.wait],
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 10, ["case", big, 1.9, 1.4], 12, ["case", big, 3, 2.2], 14, 4.6, 16, 7, 18, 9.5],
+      "circle-stroke-width": ["interpolate", ["linear"], ["zoom"], 12.5, 0, 13.5, 1.4],
+      "circle-stroke-color": C.bg } }, before);
+    doneNow.fill(0); syncStops(T);
+  }
+  function syncStops(t) {
+    if (!gl || !gl.getSource("bs-stops")) return;
+    for (const i of servedIdx) {
+      const want = S.eta[i] <= t ? 1 : 0;
+      if (doneNow[i] !== want) { doneNow[i] = want; gl.setFeatureState({ source: "bs-stops", id: i }, { done: !!want }); }
+    }
+  }
+
   let T = 0, playing = !reduce.matches, visible = true, last = 0, raf = 0, hold = 0;
   const SPEED = T_END / 32;                                // a full shift in about half a minute
   function frame(t) {
@@ -222,14 +288,15 @@
     ctx.clearRect(0, 0, cv.width, cv.height);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const z = view.z, r = Math.min(7, Math.max(1.5, 1.6 + (z - 11.3) * 1.15)), ring = z > 13.2;
-    // stops: can wait, then forecast to be full, then emptied
+    // stops: can wait, then forecast to be full, then emptied (on the street map they are a map layer instead)
     const groups = [[], [], []];
     const m = 12;
     for (let i = 0; i < nStops; i++) {
       const g = S.truck[i] >= 0 ? (S.eta[i] <= t ? 2 : 1) : (S.pred[i] >= 80 ? 1 : 0);
       groups[g].push(i);
     }
-    [[C.wait, r * .85], [C.full, r * 1.1], [C.done, r]].forEach(([col, rad], g) => {
+    if (gl) syncStops(t);
+    else [[C.wait, r * .85], [C.full, r * 1.1], [C.done, r]].forEach(([col, rad], g) => {
       ctx.beginPath();
       for (const i of groups[g]) {
         const x = stopX[i] * SC + OX, y = stopY[i] * SC + OY;
@@ -344,6 +411,17 @@
       }
     }
     const name = ["coalesce", ["get", "name_en"], ["get", "name"]];
+    const lay = id => s.layers.find(l => l.id === id);
+    if (lay("highway-name-minor")) lay("highway-name-minor").minzoom = 14.3;   // street names a little earlier than stock
+    if (lay("highway-name-major")) lay("highway-name-major").minzoom = 12;
+    if (lay("label_other")) { const l = lay("label_other"); l.layout = { ...l.layout, "text-transform": "uppercase", "text-letter-spacing": .08 }; paint(l, "text-color", C.ink); paint(l, "text-opacity", .7); }
+    s.layers.push({ id: "bs-park", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 13.5, filter: ["==", ["get", "class"], "park"],
+      layout: { "text-field": name, "text-font": ["Noto Sans Italic"], "text-size": 11, "text-max-width": 8 },
+      paint: { "text-color": C.label, "text-halo-color": C.land, "text-halo-width": 1.3 } });
+    s.layers.push({ id: "bs-poi", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 16.3,
+      filter: ["!", ["match", ["get", "class"], ["railway", "bus", "park"], true, false]],
+      layout: { "text-field": name, "text-font": ["Noto Sans Regular"], "text-size": 10.5, "text-max-width": 8 },
+      paint: { "text-color": C.label, "text-opacity": .8, "text-halo-color": C.land, "text-halo-width": 1.2 } });
     s.layers.push({ id: "bs-station", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 13.5, filter: ["==", ["get", "class"], "railway"],
       layout: { "text-field": name, "text-font": ["Noto Sans Bold"], "text-size": 10.5, "text-anchor": "top", "text-offset": [0, .4] },
       paint: { "text-color": C.label, "text-halo-color": C.land, "text-halo-width": 1.3 } });
@@ -366,11 +444,13 @@
         cooperativeGestures: true, minZoom: 9.5, maxZoom: 18.5, fadeDuration: 0,
       });
       m.touchZoomRotate.disableRotation();
+      m.on("style.load", () => { if (gl) addStops(m); });
       m.addControl(new maplibregl.AttributionControl({ compact: true, customAttribution: '<a href="https://openfreemap.org" target="_blank" rel="noopener">OpenFreeMap</a> · © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>' }), "bottom-right");
       let on = false;
       const swap = () => {                                  // only once the first street tiles are drawn, so the map is never blank
         if (on) return; on = true; gl = m;
-        card.classList.add("street"); baseCv.hidden = true;
+        card.classList.add("street"); baseCv.hidden = true; drawLabels();
+        addStops(m);
         m.on("move", () => { syncView(); if (!playing || !visible) frame(T); });
         syncView(); frame(T);
       };
@@ -378,7 +458,7 @@
       setTimeout(() => { if (!on && m.loaded()) swap(); }, 9000);
     } catch (e) { /* keep the vector map */ }
   })();
-  const retheme = () => { readColours(); drawBase(); if (gl && rawStyle) gl.setStyle(paletteStyle()); frame(T); };
+  const retheme = () => { readColours(); drawBase(); if (gl && rawStyle) gl.setStyle(paletteStyle(), { diff: false }); frame(T); };
   matchMedia("(prefers-color-scheme: dark)").addEventListener("change", retheme);
   new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 

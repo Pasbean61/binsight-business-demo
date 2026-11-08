@@ -51,6 +51,9 @@ basemap = {"wards": [{"name": w["name"], "rings": w["rings"]} for w in base["war
            "water": [w["line"] for w in base["water"]],
            "lakes": [p["ring"] for p in base["parks"] if p.get("k") == "water"],
            "parks": [p["ring"] for p in base["parks"] if p.get("k") == "park"]}
+lab = os.path.join(os.path.dirname(OUT), "labels.json")          # street and place names (scripts/make_labels.py)
+if os.path.exists(lab):
+    basemap["labels"] = json.load(open(lab))
 out = {"facts": facts, "names": names, "stops": S, "trucks": trucks, "depot": routes["depot"], "base": basemap}
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 json.dump(out, open(OUT, "w"), separators=(",", ":"), allow_nan=False)

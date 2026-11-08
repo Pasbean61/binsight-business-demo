@@ -40,7 +40,7 @@ The page shows it as an interactive 3D model, built to scale (45 × 20 mm board,
 
 ## Page sections
 
-- **Hero:** a real Edinburgh street map (OpenStreetMap vector tiles from OpenFreeMap, drawn with MapLibre) with every bin stop and tomorrow's 34 truck routes replayed on top in the same projection, from 06:00 to 14:00. You can pan and zoom down to street level. Where the tiles can't load (inside a claude.ai artifact, or offline), a vector map of the same streets is drawn instead.
+- **Hero:** a real Edinburgh street map (OpenStreetMap vector tiles from OpenFreeMap, drawn with MapLibre) with every bin stop and tomorrow's 34 truck routes replayed on top in the same projection, from 06:00 to 14:00. You can pan and zoom down to street level. Street names, neighbourhoods, stations, parks and house numbers appear as you zoom, and the bin dots sit under the names so they stay readable. Where the tiles can't load (inside a claude.ai artifact, or offline), a vector map of the same streets is drawn instead, with 4,835 street-name labels and 353 place names from OpenStreetMap.
 - **Proof strip and the problem:** sourced facts.
 - **How it works.**
 - **Product:** three screens built from the real plan: the control room, the driver run sheet and the resident app.
@@ -57,6 +57,7 @@ The page shows it as an interactive 3D model, built to scale (45 × 20 mm board,
 The page is one HTML file with its data inlined. It loads Google Fonts, MapLibre and three.js from CDNs; the street map comes from OpenFreeMap.
 
 ```bash
+python3 scripts/make_labels.py                       # optional: street and place names for the fallback map (needs cache/osm_labels.json from the Overpass API)
 python3 scripts/make_data.py ../binsight-edinburgh   # optional: refresh data/demo.json from the research repo
 python3 scripts/build.py                             # writes index.html and site/binsight-business.html
 ```

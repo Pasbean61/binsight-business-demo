@@ -132,6 +132,7 @@ section.tight { padding-block: 56px; }
 .mapcard canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: grab; }
 .mapcard.grabbing canvas { cursor: grabbing; }
 .mapcard.street #map { pointer-events: none; touch-action: auto; }
+.mapcard canvas.map-labels { pointer-events: none; }
 .mapcard .maplibregl-ctrl-attrib { font: 11px var(--body); }
 .mapcard .maplibregl-cooperative-gesture-screen { font: 500 15px var(--body); }
 .map-top { position: absolute; left: 18px; right: 18px; top: 16px; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; pointer-events: none; z-index: 3; }
